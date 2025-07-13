@@ -1,12 +1,12 @@
-## Contributing
+## Contribuir
 
-This project is still in BETA so please feel free to contribute to the project. By creating your own indicators or improving the existing ones. If you are struggling to find something to do then please check out the issues tab for requested changes.
+Este proyecto aún está en BETA, así que por favor siéntete libre de contribuir al proyecto. Creando tus propios indicadores o mejorando los existentes. Si tienes dificultades para encontrar algo que hacer, por favor revisa la pestaña de issues para cambios solicitados.
 
-1. Fork it (https://github.com/joshyattridge/smartmoneyconcepts/fork).
-2. Study how it's implemented.
-3. Create your feature branch (git checkout -b my-new-feature).
-4. Commit your changes (git commit -am 'Add some feature').
-5. Push to the branch (git push origin my-new-feature).
-6. Create a new Pull Request.
+1. Haz un fork (https://github.com/joshyattridge/smartmoneyconcepts/fork).
+2. Estudia cómo está implementado.
+3. Crea tu rama de características (git checkout -b my-new-feature).
+4. Haz commit de tus cambios (git commit -am 'Add some feature').
+5. Push a la rama (git push origin my-new-feature).
+6. Crea un nuevo Pull Request.
 
-Less is more – each pull request should be minimal, focusing on a single function or a small feature. Large, sweeping changes will not be merged, as they are harder to review and maintain. Keep it simple and focused!
+Menos es más – cada pull request debe ser mínimo, enfocándose en una sola función o una pequeña característica. Los cambios grandes y generales no serán fusionados, ya que son más difíciles de revisar y mantener. ¡Manténlo simple y enfocado!

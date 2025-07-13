@@ -3,7 +3,7 @@ import codecs
 import os
 
 VERSION = "0.0.26"
-DESCRIPTION = "Getting indicators based on smart money concepts or ICT"
+DESCRIPTION = "Obtención de indicadores basados en conceptos de smart money o ICT"
 
 # read the contents of the README file
 with codecs.open("README.md", encoding="utf-8") as f:

@@ -9,6 +9,7 @@ import time
 import imageio
 from io import BytesIO
 from PIL import Image
+from tqdm import tqdm
 
 sys.path.append(os.path.abspath("../"))
 from smartmoneyconcepts.smc import smc
@@ -422,23 +423,33 @@ def add_retracements(fig, df, retracements):
 
 # get the data
 def import_data(symbol, start_str, timeframe):
+    print(f"📊 Descargando datos históricos de {symbol} desde {start_str}...")
     client = Client()
     start_str = str(start_str)
     end_str = f"{datetime.now()}"
-    df = pd.DataFrame(
-        client.get_historical_klines(
-            symbol=symbol, interval=timeframe, start_str=start_str, end_str=end_str
-        )
-    ).astype(float)
+    
+    print("⏳ Conectando con Binance...")
+    klines = client.get_historical_klines(
+        symbol=symbol, interval=timeframe, start_str=start_str, end_str=end_str
+    )
+    print(f"✅ Descargados {len(klines)} registros de datos")
+    
+    print("🔄 Procesando datos...")
+    df = pd.DataFrame(klines).astype(float)
     df = df.iloc[:, :6]
     df.columns = ["timestamp", "open", "high", "low", "close", "volume"]
     df = df.set_index("timestamp")
     df.index = pd.to_datetime(df.index, unit="ms").strftime("%Y-%m-%d %H:%M:%S")
+    print(f"✅ Datos procesados: {len(df)} velas de {df.index[0]} a {df.index[-1]}")
     return df
 
 
 df = import_data("BTCUSDT", "2024-04-01", "15m")
 df = df.iloc[-500:]
+
+window = 100
+print(f"🎬 Preparando generación de GIF con {len(df)} velas (ventana de {window} velas)")
+print(f"📈 Se generarán {len(df) - window} frames para el GIF")
 
 def fig_to_buffer(fig):
     fig_bytes = fig.to_image(format="png")
@@ -449,8 +460,8 @@ def fig_to_buffer(fig):
 
 gif = []
 
-window = 100
-for pos in range(window, len(df)):
+print("🎨 Generando frames del GIF...")
+for pos in tqdm(range(window, len(df)), desc="Generando frames", unit="frame"):
     window_df = df.iloc[pos - window : pos]
 
     fig = go.Figure(
@@ -498,5 +509,12 @@ for pos in range(window, len(df)):
 
     gif.append(fig_to_buffer(fig))
 
+print(f"💾 Guardando GIF con {len(gif)} frames...")
 # save the gif
 imageio.mimsave("test.gif", gif, duration=1)
+print("✅ ¡GIF generado exitosamente! Archivo: test.gif")
+print(f"📊 Resumen:")
+print(f"   - Frames generados: {len(gif)}")
+print(f"   - Duración por frame: 1 segundo")
+print(f"   - Duración total: {len(gif)} segundos")
+print(f"   - Tamaño de imagen: 500x300 píxeles")
