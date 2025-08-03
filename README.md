@@ -4,30 +4,30 @@
 [![Bitcoin Donate](https://badgen.net/badge/Bitcoin/Donate/F19537?icon=bitcoin)](https://blockstream.info/address/bc1petss2mlqyjsajyzhu06wzl667v0f8svc0hnpqjj2d32frtx77g4sg5s0pg)
 
 <p align="center">
-  <img src="https://github.com/joshyattridge/smart-money-concepts/blob/f0c0fc28cc290cdd9dfcc6a6ac246ed1d59061be/tests/test.gif" alt="Candle Graph Showing Indicators"/>
+  <img src="https://github.com//smart-money-concepts/blob/f0c0fc28cc290cdd9dfcc6a6ac246ed1d59061be/tests/test.gif" alt="Gráfico de Velas Mostrando Indicadores"/>
 </p>
 
 # Smart Money Concepts (smc)
 
-The Smart Money Concepts Python Indicator is a sophisticated financial tool developed for traders and investors to gain insights into market sentiment, trends, and potential reversals. This indicator is inspired by Inner Circle Trader (ICT) concepts like Order blocks, Liquidity, Fair Value Gap, Swing Highs and Lows, Break of Structure, Change of Character, and more. Please Take a look and contribute to the project.
+El Indicador Python de Smart Money Concepts es una herramienta financiera sofisticada desarrollada para traders e inversores para obtener información sobre el sentimiento del mercado, tendencias y posibles reversiones. Este indicador está inspirado en los conceptos de Inner Circle Trader (ICT) como Order blocks, Liquidity, Fair Value Gap, Swing Highs and Lows, Break of Structure, Change of Character, y más. Por favor, echa un vistazo y contribuye al proyecto.
 
-## Installation
+## Instalación
 
 ```bash
 pip install smartmoneyconcepts
 ```
 
-## Usage
+## Uso
 
 ```python
 from smartmoneyconcepts import smc
 ```
 
-Prepare data to use with smc:
+Prepara los datos para usar con smc:
 
-smc expects properly formated ohlc DataFrame, with column names in lowercase: ["open", "high", "low", "close"] and ["volume"] for indicators that expect ohlcv input.
+smc espera un DataFrame OHLC correctamente formateado, con nombres de columnas en minúsculas: ["open", "high", "low", "close"] y ["volume"] para indicadores que esperan entrada OHLCV.
 
-## Indicators
+## Indicadores
 
 ### Fair Value Gap (FVG)
 
@@ -35,17 +35,17 @@ smc expects properly formated ohlc DataFrame, with column names in lowercase: ["
 smc.fvg(ohlc, join_consecutive=False)
 ```
 
-A fair value gap is when the previous high is lower than the next low if the current candle is bullish.
-Or when the previous low is higher than the next high if the current candle is bearish.
+Un fair value gap es cuando el máximo anterior es menor que el mínimo siguiente si la vela actual es alcista.
+O cuando el mínimo anterior es mayor que el máximo siguiente si la vela actual es bajista.
 
-parameters:<br>
-join_consecutive: bool - if there are multiple FVG in a row then they will be merged into one using the highest top and the lowest bottom<br>
+parámetros:<br>
+join_consecutive: bool - si hay múltiples FVG consecutivos, se fusionarán en uno usando el máximo más alto y el mínimo más bajo<br>
 
-returns:<br>
-FVG = 1 if bullish fair value gap, -1 if bearish fair value gap<br>
-Top = the top of the fair value gap<br>
-Bottom = the bottom of the fair value gap<br>
-MitigatedIndex = the index of the candle that mitigated the fair value gap<br>
+retorna:<br>
+FVG = 1 si fair value gap alcista, -1 si fair value gap bajista<br>
+Top = el tope del fair value gap<br>
+Bottom = el fondo del fair value gap<br>
+MitigatedIndex = el índice de la vela que mitigó el fair value gap<br>
 
 ### Swing Highs and Lows
 
@@ -53,15 +53,15 @@ MitigatedIndex = the index of the candle that mitigated the fair value gap<br>
 smc.swing_highs_lows(ohlc, swing_length = 50)
 ```
 
-A swing high is when the current high is the highest high out of the swing_length amount of candles before and after.
-A swing low is when the current low is the lowest low out of the swing_length amount of candles before and after.
+Un swing high es cuando el máximo actual es el máximo más alto de la cantidad swing_length de velas antes y después.
+Un swing low es cuando el mínimo actual es el mínimo más bajo de la cantidad swing_length de velas antes y después.
 
-parameters:<br>
-swing_length: int - the amount of candles to look back and forward to determine the swing high or low<br>
+parámetros:<br>
+swing_length: int - la cantidad de velas para mirar hacia atrás y hacia adelante para determinar el swing high o low<br>
 
-returns:<br>
-HighLow = 1 if swing high, -1 if swing low<br>
-Level = the level of the swing high or low<br>
+retorna:<br>
+HighLow = 1 si swing high, -1 si swing low<br>
+Level = el nivel del swing high o low<br>
 
 ### Break of Structure (BOS) & Change of Character (CHoCH)
 
@@ -69,17 +69,17 @@ Level = the level of the swing high or low<br>
 smc.bos_choch(ohlc, swing_highs_lows, close_break = True)
 ```
 
-These are both indications of market structure changing
+Estos son ambos indicaciones de cambio en la estructura del mercado
 
-parameters:<br>
-swing_highs_lows: DataFrame - provide the dataframe from the swing_highs_lows function<br>
-close_break: bool - if True then the break of structure will be mitigated based on the close of the candle otherwise it will be the high/low.<br>
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+close_break: bool - si es True entonces la ruptura de estructura se mitigará basándose en el cierre de la vela, de lo contrario será el high/low.<br>
 
-returns:<br>
-BOS = 1 if bullish break of structure, -1 if bearish break of structure<br>
-CHOCH = 1 if bullish change of character, -1 if bearish change of character<br>
-Level = the level of the break of structure or change of character<br>
-BrokenIndex = the index of the candle that broke the level<br>
+retorna:<br>
+BOS = 1 si ruptura de estructura alcista, -1 si ruptura de estructura bajista<br>
+CHOCH = 1 si cambio de carácter alcista, -1 si cambio de carácter bajista<br>
+Level = el nivel de la ruptura de estructura o cambio de carácter<br>
+BrokenIndex = el índice de la vela que rompió el nivel<br>
 
 ### Order Blocks (OB)
 
@@ -87,18 +87,18 @@ BrokenIndex = the index of the candle that broke the level<br>
 smc.ob(ohlc, swing_highs_lows, close_mitigation = False)
 ```
 
-This method detects order blocks when there is a high amount of market orders exist on a price range.
+Este método detecta order blocks cuando existe una alta cantidad de órdenes de mercado en un rango de precios.
 
-parameters:<br>
-swing_highs_lows: DataFrame - provide the dataframe from the swing_highs_lows function<br>
-close_mitigation: bool - if True then the order block will be mitigated based on the close of the candle otherwise it will be the high/low.
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+close_mitigation: bool - si es True entonces el order block se mitigará basándose en el cierre de la vela, de lo contrario será el high/low.
 
-returns:<br>
-OB = 1 if bullish order block, -1 if bearish order block<br>
-Top = top of the order block<br>
-Bottom = bottom of the order block<br>
-OBVolume = volume + 2 last volumes amounts<br>
-Percentage = strength of order block (min(highVolume, lowVolume)/max(highVolume,lowVolume))<br>
+retorna:<br>
+OB = 1 si order block alcista, -1 si order block bajista<br>
+Top = tope del order block<br>
+Bottom = fondo del order block<br>
+OBVolume = volumen + 2 últimos volúmenes<br>
+Percentage = fuerza del order block (min(highVolume, lowVolume)/max(highVolume,lowVolume))<br>
 
 
 ### Liquidity
@@ -107,18 +107,18 @@ Percentage = strength of order block (min(highVolume, lowVolume)/max(highVolume,
 smc.liquidity(ohlc, swing_highs_lows, range_percent = 0.01)
 ```
 
-Liquidity is when there are multiply highs within a small range of each other.
-or multiply lows within a small range of each other.
+Liquidez es cuando hay múltiples máximos dentro de un pequeño rango entre sí.
+o múltiples mínimos dentro de un pequeño rango entre sí.
 
-parameters:<br>
-swing_highs_lows: DataFrame - provide the dataframe from the swing_highs_lows function<br>
-range_percent: float - the percentage of the range to determine liquidity<br>
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+range_percent: float - el porcentaje del rango para determinar la liquidez<br>
 
-returns:<br>
-Liquidity = 1 if bullish liquidity, -1 if bearish liquidity<br>
-Level = the level of the liquidity<br>
-End = the index of the last liquidity level<br>
-Swept = the index of the candle that swept the liquidity<br>
+retorna:<br>
+Liquidity = 1 si liquidez alcista, -1 si liquidez bajista<br>
+Level = el nivel de la liquidez<br>
+End = el índice del último nivel de liquidez<br>
+Swept = el índice de la vela que barrió la liquidez<br>
 
 ### Previous High And Low
 
@@ -126,16 +126,16 @@ Swept = the index of the candle that swept the liquidity<br>
 smc.previous_high_low(ohlc, time_frame = "1D")
 ```
 
-This method returns the previous high and low of the given time frame.
+Este método retorna el máximo y mínimo anterior del marco de tiempo dado.
 
-parameters:<br>
-time_frame: str - the time frame to get the previous high and low 15m, 1H, 4H, 1D, 1W, 1M<br>
+parámetros:<br>
+time_frame: str - el marco de tiempo para obtener el máximo y mínimo anterior 15m, 1H, 4H, 1D, 1W, 1M<br>
 
-returns:<br>
-PreviousHigh = the previous high<br>
-PreviousLow = the previous low<br>
-BrokenHigh = 1 once price has broken the previous high of the timeframe, 0 otherwise<br>
-BrokenLow = 1 once price has broken the previous low of the timeframe, 0 otherwise<br>
+retorna:<br>
+PreviousHigh = el máximo anterior<br>
+PreviousLow = el mínimo anterior<br>
+BrokenHigh = 1 una vez que el precio ha roto el máximo anterior del timeframe, 0 en caso contrario<br>
+BrokenLow = 1 una vez que el precio ha roto el mínimo anterior del timeframe, 0 en caso contrario<br>
 
 ### Sessions
 
@@ -143,18 +143,18 @@ BrokenLow = 1 once price has broken the previous low of the timeframe, 0 otherwi
 smc.sessions(ohlc, session, start_time, end_time, time_zone = "UTC")
 ```
 
-This method returns which candles are within the session specified
+Este método retorna qué velas están dentro de la sesión especificada
 
-parameters:<br>
-session: str - the session you want to check (Sydney, Tokyo, London, New York, Asian kill zone, London open kill zone, New York kill zone, london close kill zone, Custom)<br>
-start_time: str - the start time of the session in the format "HH:MM" only required for custom session.<br>
-end_time: str - the end time of the session in the format "HH:MM" only required for custom session.<br>
-time_zone: str - the time zone of the candles can be in the format "UTC+0" or "GMT+0"<br>
+parámetros:<br>
+session: str - la sesión que quieres verificar (Sydney, Tokyo, London, New York, Asian kill zone, London open kill zone, New York kill zone, london close kill zone, Custom)<br>
+start_time: str - la hora de inicio de la sesión en formato "HH:MM" solo requerido para sesión personalizada.<br>
+end_time: str - la hora de fin de la sesión en formato "HH:MM" solo requerido para sesión personalizada.<br>
+time_zone: str - la zona horaria de las velas puede estar en formato "UTC+0" o "GMT+0"<br>
 
-returns:<br>
-Active = 1 if the candle is within the session, 0 if not<br>
-High = the highest point of the session<br>
-Low = the lowest point of the session<br>
+retorna:<br>
+Active = 1 si la vela está dentro de la sesión, 0 si no<br>
+High = el punto más alto de la sesión<br>
+Low = el punto más bajo de la sesión<br>
 
 ### Retracements
 
@@ -162,38 +162,104 @@ Low = the lowest point of the session<br>
 smc.retracements(ohlc, swing_highs_lows)
 ```
 
-This method returns the percentage of a retracement from the swing high or low
+Este método retorna el porcentaje de un retroceso desde el swing high o low
 
-parameters:<br>
-swing_highs_lows: DataFrame - provide the dataframe from the swing_highs_lows function<br>
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
 
-returns:<br>
-Direction = 1 if bullish retracement, -1 if bearish retracement<br>
-CurrentRetracement% = the current retracement percentage from the swing high or low<br>
-DeepestRetracement% = the deepest retracement percentage from the swing high or low<br>
+retorna:<br>
+Direction = 1 si retroceso alcista, -1 si retroceso bajista<br>
+CurrentRetracement% = el porcentaje de retroceso actual desde el swing high o low<br>
+DeepestRetracement% = el porcentaje de retroceso más profundo desde el swing high o low<br>
 
-## Hide Credit Message
+### Equal Highs/Lows
+
+```python
+smc.equal_highs_lows(ohlc, swing_highs_lows, tolerance=0.0001)
+```
+
+Este método identifica niveles donde hay múltiples swing highs o swing lows en el mismo precio,
+indicando zonas de resistencia o soporte significativas.
+
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+tolerance: float - la tolerancia para considerar que dos niveles son iguales (por defecto 0.0001)<br>
+
+retorna:<br>
+EqualLevel = 1 si equal highs, -1 si equal lows, 0 si no hay equal level<br>
+Level = el nivel del equal high o low<br>
+Count = el número de veces que se ha tocado este nivel<br>
+FirstIndex = el índice de la primera vez que se tocó este nivel<br>
+LastIndex = el índice de la última vez que se tocó este nivel<br>
+Strength = la fuerza del nivel basada en el número de toques y la distancia temporal<br>
+
+### Premium/Discount Zones
+
+```python
+smc.premium_discount_zones(ohlc, swing_highs_lows, lookback_period=50)
+```
+
+Este método identifica zonas donde el precio está considerado "caro" (premium) o "barato" (discount)
+basándose en rangos de swing importantes. Las zonas se calculan usando el 50% del rango como punto de referencia.
+
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+lookback_period: int - el número de velas hacia atrás para buscar el swing más relevante<br>
+
+retorna:<br>
+Zone = 1 si zona premium, -1 si zona discount, 0 si en el medio del rango<br>
+RangeHigh = el swing high del rango de referencia<br>
+RangeLow = el swing low del rango de referencia<br>
+MidPoint = el punto medio (50%) del rango<br>
+DistanceFromMid = la distancia porcentual desde el punto medio<br>
+RangeStrength = la fuerza del rango basada en su tamaño y antigüedad<br>
+
+### Trend Indicator (Indicador de Tendencia)
+
+```python
+smc.trend_indicator(ohlc, swing_highs_lows, lookback_period=20)
+```
+
+Este método combina múltiples elementos de Smart Money Concepts para determinar la dirección de la tendencia:
+- Swing highs/lows más recientes
+- Break of Structure (BOS)
+- Change of Character (CHoCH)
+- Fair Value Gaps
+- Order Blocks
+- Premium/Discount Zones
+
+parámetros:<br>
+swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows<br>
+lookback_period: int - el número de velas hacia atrás para analizar la tendencia<br>
+
+retorna:<br>
+Trend = 1 si tendencia alcista, -1 si tendencia bajista, 0 si lateral<br>
+Strength = fuerza de la tendencia (0-100)<br>
+Confidence = confianza en la señal (0-100)<br>
+LastBOS = último Break of Structure detectado<br>
+LastCHOCH = último Change of Character detectado<br>
+TrendChange = 1 si cambio de tendencia reciente, 0 si no<br>
+
+## Ocultar Mensaje de Crédito
 
 ```bash
 export SMC_CREDIT=0
 ```
 
-This method will hide the credit message when you first import the library.
+Este método ocultará el mensaje de crédito cuando importes la biblioteca por primera vez.
 
-## Contributing
+## Contribuir
 
-Please feel free to contribute to the project. By creating your own indicators or improving the existing ones. If you are struggling to find something to do then please check out the issues tab for requested changes.
+Por favor, siéntete libre de contribuir al proyecto. Creando tus propios indicadores o mejorando los existentes. Si tienes dificultades para encontrar algo que hacer, por favor revisa la pestaña de issues para cambios solicitados.
 
-1. Fork it (https://github.com/joshyattridge/smartmoneyconcepts/fork).
-2. Study how it's implemented.
-3. Create your feature branch (git checkout -b my-new-feature).
-4. Commit your changes (git commit -am 'Add some feature').
-5. Push to the branch (git push origin my-new-feature).
-6. Create a new Pull Request.
+2. Estudia cómo está implementado.
+3. Crea tu rama de características (git checkout -b my-new-feature).
+4. Haz commit de tus cambios (git commit -am 'Add some feature').
+5. Push a la rama (git push origin my-new-feature).
+6. Crea un nuevo Pull Request.
 
-Less is more – each pull request should be minimal, focusing on a single function or a small feature. Large, sweeping changes will not be merged, as they are harder to review and maintain. Keep it simple and focused!
+Menos es más – cada pull request debe ser mínimo, enfocándose en una sola función o una pequeña característica. Los cambios grandes y generales no serán fusionados, ya que son más difíciles de revisar y mantener. ¡Manténlo simple y enfocado!
 
-## Disclaimer
+## Descargo de Responsabilidad
 
-This project is for educational purposes only. Do not use this indicator as a sole decision maker for your trades. Always use proper risk management and do your own research before making any trades. The author of this project is not responsible for any losses you may incur.
-"# SmartMoneyPython" 
+Este proyecto es solo para fines educativos. No uses este indicador como único tomador de decisiones para tus operaciones. Siempre usa una gestión de riesgo adecuada y haz tu propia investigación antes de hacer cualquier operación. El autor de este proyecto no es responsable de ninguna pérdida que puedas incurrir. 
