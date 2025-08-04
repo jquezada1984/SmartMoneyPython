@@ -127,7 +127,8 @@ def add_swing_highs_lows(fig, df, swing_highs_lows_data):
                         else "rgba(255, 0, 0, 0.2)"
                     ),
                 ),
-            )
+            ),
+            row=1, col=1
         )
 
     return fig
@@ -147,7 +148,8 @@ def add_bos_choch(fig, df, bos_choch_data):
                     line=dict(
                         color="rgba(255, 165, 0, 0.2)",
                     ),
-                )
+                ),
+                row=1, col=1
             )
             fig.add_trace(
                 go.Scatter(
@@ -157,7 +159,8 @@ def add_bos_choch(fig, df, bos_choch_data):
                     text="BOS",
                     textposition="top center" if bos_choch_data["BOS"][i] == 1 else "bottom center",
                     textfont=dict(color="rgba(255, 165, 0, 0.4)", size=8),
-                )
+                ),
+                row=1, col=1
             )
         if not np.isnan(bos_choch_data["CHOCH"][i]):
             # add a label to this line
@@ -171,7 +174,8 @@ def add_bos_choch(fig, df, bos_choch_data):
                     line=dict(
                         color="rgba(0, 0, 255, 0.2)",
                     ),
-                )
+                ),
+                row=1, col=1
             )
             fig.add_trace(
                 go.Scatter(
@@ -181,7 +185,8 @@ def add_bos_choch(fig, df, bos_choch_data):
                     text="CHOCH",
                     textposition="top center" if bos_choch_data["CHOCH"][i] == 1 else "bottom center",
                     textfont=dict(color="rgba(0, 0, 255, 0.4)", size=8),
-                )
+                ),
+                row=1, col=1
             )
 
     return fig
@@ -298,7 +303,8 @@ def add_liquidity(fig, df, liquidity_data):
                     line=dict(
                         color="rgba(255, 165, 0, 0.2)",
                     ),
-                )
+                ),
+                row=1, col=1
             )
             mid_x = round((i + int(liquidity_data["End"][i])) / 2)
             fig.add_trace(
@@ -309,7 +315,8 @@ def add_liquidity(fig, df, liquidity_data):
                     text="Liquidity",
                     textposition="top center" if liquidity_data["Liquidity"][i] == 1 else "bottom center",
                     textfont=dict(color="rgba(255, 165, 0, 0.4)", size=8),
-                )
+                ),
+                row=1, col=1
             )
         if liquidity_data["Swept"][i] != 0 and not np.isnan(liquidity_data["Swept"][i]):
             # draw a red line between the end and the swept point
@@ -331,7 +338,8 @@ def add_liquidity(fig, df, liquidity_data):
                     line=dict(
                         color="rgba(255, 0, 0, 0.2)",
                     ),
-                )
+                ),
+                row=1, col=1
             )
             mid_x = round((i + int(liquidity_data["Swept"][i])) / 2)
             mid_y = (
@@ -350,7 +358,8 @@ def add_liquidity(fig, df, liquidity_data):
                     text="Liquidity Swept",
                     textposition="top center" if liquidity_data["Liquidity"][i] == 1 else "bottom center",
                     textfont=dict(color="rgba(255, 0, 0, 0.4)", size=8),
-                )
+                ),
+                row=1, col=1
             )
     return fig
 
@@ -977,16 +986,498 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames", unit="frame"):
     
     # === AGREGAR SMC AL GRÁFICO PRINCIPAL ===
     # Smart Money Concepts (solo en el gráfico principal - row=1)
-    fig = add_FVG(fig, window_df, fvg_data)
-    fig = add_swing_highs_lows(fig, window_df, swing_highs_lows_data)
-    fig = add_bos_choch(fig, window_df, bos_choch_data)
-    fig = add_OB(fig, window_df, ob_data)
-    fig = add_liquidity(fig, window_df, liquidity_data)
-    fig = add_previous_high_low(fig, window_df, previous_high_low_data)
-    fig = add_sessions(fig, window_df, sessions)
-    fig = add_retracements(fig, window_df, retracements)
-    fig = add_equal_highs_lows(fig, window_df, equal_highs_lows_data)
-    fig = add_premium_discount_zones(fig, window_df, premium_discount_data)
+    
+    # FVG
+    for i in range(len(fvg_data["FVG"])):
+        if not np.isnan(fvg_data["FVG"][i]):
+            x1 = int(fvg_data["MitigatedIndex"][i] if fvg_data["MitigatedIndex"][i] != 0 else len(window_df) - 1)
+            fig.add_shape(
+                type="rect",
+                x0=window_df.index[i], y0=fvg_data["Top"][i],
+                x1=window_df.index[x1], y1=fvg_data["Bottom"][i],
+                line=dict(width=0),
+                fillcolor="yellow", opacity=0.2,
+                xref="x", yref="y"
+            )
+            mid_x = round((i + x1) / 2)
+            mid_y = (fvg_data["Top"][i] + fvg_data["Bottom"][i]) / 2
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[mid_x]], y=[mid_y],
+                    mode="text", text="FVG",
+                    textposition="middle center",
+                    textfont=dict(color='rgba(255, 255, 255, 0.4)', size=8),
+                ),
+                row=1, col=1
+            )
+    
+    # Swing Highs/Lows
+    indexs = []
+    level = []
+    for i in range(len(swing_highs_lows_data)):
+        if not np.isnan(swing_highs_lows_data["HighLow"][i]):
+            indexs.append(i)
+            level.append(swing_highs_lows_data["Level"][i])
+    
+    for i in range(len(indexs) - 1):
+        fig.add_trace(
+            go.Scatter(
+                x=[window_df.index[indexs[i]], window_df.index[indexs[i + 1]]],
+                y=[level[i], level[i + 1]],
+                mode="lines",
+                line=dict(color="rgba(0, 128, 0, 0.2)" if swing_highs_lows_data["HighLow"][indexs[i]] == -1 else "rgba(255, 0, 0, 0.2)"),
+            ),
+            row=1, col=1
+        )
+    
+    # BOS/CHOCH
+    for i in range(len(bos_choch_data["BOS"])):
+        if not np.isnan(bos_choch_data["BOS"][i]):
+            mid_x = round((i + int(bos_choch_data["BrokenIndex"][i])) / 2)
+            mid_y = bos_choch_data["Level"][i]
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i], window_df.index[int(bos_choch_data["BrokenIndex"][i])]],
+                    y=[bos_choch_data["Level"][i], bos_choch_data["Level"][i]],
+                    mode="lines",
+                    line=dict(color="rgba(255, 165, 0, 0.2)"),
+                ),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[mid_x]], y=[mid_y],
+                    mode="text", text="BOS",
+                    textposition="top center" if bos_choch_data["BOS"][i] == 1 else "bottom center",
+                    textfont=dict(color="rgba(255, 165, 0, 0.4)", size=8),
+                ),
+                row=1, col=1
+            )
+        if not np.isnan(bos_choch_data["CHOCH"][i]):
+            mid_x = round((i + int(bos_choch_data["BrokenIndex"][i])) / 2)
+            mid_y = bos_choch_data["Level"][i]
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i], window_df.index[int(bos_choch_data["BrokenIndex"][i])]],
+                    y=[bos_choch_data["Level"][i], bos_choch_data["Level"][i]],
+                    mode="lines",
+                    line=dict(color="rgba(0, 0, 255, 0.2)"),
+                ),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[mid_x]], y=[mid_y],
+                    mode="text", text="CHOCH",
+                    textposition="top center" if bos_choch_data["CHOCH"][i] == 1 else "bottom center",
+                    textfont=dict(color="rgba(0, 0, 255, 0.4)", size=8),
+                ),
+                row=1, col=1
+            )
+    
+    # Order Blocks
+    def format_volume(volume):
+        if volume >= 1e12:
+            return f"{volume / 1e12:.3f}T"
+        elif volume >= 1e9:
+            return f"{volume / 1e9:.3f}B"
+        elif volume >= 1e6:
+            return f"{volume / 1e6:.3f}M"
+        elif volume >= 1e3:
+            return f"{volume / 1e3:.3f}k"
+        else:
+            return f"{volume:.2f}"
+
+    for i in range(len(ob_data["OB"])):
+        if ob_data["OB"][i] == 1:
+            x1 = int(ob_data["MitigatedIndex"][i] if ob_data["MitigatedIndex"][i] != 0 else len(window_df) - 1)
+            fig.add_shape(
+                type="rect",
+                x0=window_df.index[i], y0=ob_data["Bottom"][i],
+                x1=window_df.index[x1], y1=ob_data["Top"][i],
+                line=dict(color="Purple"), fillcolor="Purple", opacity=0.2,
+                xref="x", yref="y"
+            )
+            
+            if ob_data["MitigatedIndex"][i] > 0:
+                x_center = window_df.index[int(i + (ob_data["MitigatedIndex"][i] - i) / 2)]
+            else:
+                x_center = window_df.index[int(i + (len(window_df) - i) / 2)]
+
+            y_center = (ob_data["Bottom"][i] + ob_data["Top"][i]) / 2
+            volume_text = format_volume(ob_data["OBVolume"][i])
+            annotation_text = f'OB: {volume_text} ({ob_data["Percentage"][i]}%)'
+
+            fig.add_annotation(
+                x=x_center,
+                y=y_center,
+                xref="x",
+                yref="y",
+                align="center",
+                text=annotation_text,
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False,
+            )
+
+    for i in range(len(ob_data["OB"])):
+        if ob_data["OB"][i] == -1:
+            x1 = int(ob_data["MitigatedIndex"][i] if ob_data["MitigatedIndex"][i] != 0 else len(window_df) - 1)
+            fig.add_shape(
+                type="rect",
+                x0=window_df.index[i], y0=ob_data["Bottom"][i],
+                x1=window_df.index[x1], y1=ob_data["Top"][i],
+                line=dict(color="Purple"), fillcolor="Purple", opacity=0.2,
+                xref="x", yref="y"
+            )
+            
+            if ob_data["MitigatedIndex"][i] > 0:
+                x_center = window_df.index[int(i + (ob_data["MitigatedIndex"][i] - i) / 2)]
+            else:
+                x_center = window_df.index[int(i + (len(window_df) - i) / 2)]
+
+            y_center = (ob_data["Bottom"][i] + ob_data["Top"][i]) / 2
+            volume_text = format_volume(ob_data["OBVolume"][i])
+            annotation_text = f'OB: {volume_text} ({ob_data["Percentage"][i]}%)'
+
+            fig.add_annotation(
+                x=x_center,
+                y=y_center,
+                xref="x",
+                yref="y",
+                align="center",
+                text=annotation_text,
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False,
+            )
+    
+    # Liquidity
+    for i in range(len(liquidity_data["Liquidity"])):
+        if not np.isnan(liquidity_data["Liquidity"][i]):
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[liquidity_data["Level"][i]],
+                    mode="markers",
+                    marker=dict(
+                        symbol="diamond", size=10,
+                        color="rgba(255, 255, 0, 0.8)" if liquidity_data["Liquidity"][i] == 1 else "rgba(255, 0, 0, 0.8)"
+                    ),
+                ),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[liquidity_data["Level"][i]],
+                    mode="text",
+                    text="L" if liquidity_data["Liquidity"][i] == 1 else "L",
+                    textposition="top center" if liquidity_data["Liquidity"][i] == 1 else "bottom center",
+                    textfont=dict(color="rgba(255, 255, 0, 0.8)" if liquidity_data["Liquidity"][i] == 1 else "rgba(255, 0, 0, 0.8)", size=8),
+                ),
+                row=1, col=1
+            )
+    
+    # Previous High/Low
+    for i in range(len(previous_high_low_data["PreviousHigh"])):
+        if not np.isnan(previous_high_low_data["PreviousHigh"][i]):
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[previous_high_low_data["PreviousHigh"][i]],
+                    mode="markers",
+                    marker=dict(symbol="circle", size=8, color="rgba(255, 0, 0, 0.8)"),
+                ),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[previous_high_low_data["PreviousHigh"][i]],
+                    mode="text", text="PH",
+                    textposition="top center",
+                    textfont=dict(color="rgba(255, 0, 0, 0.8)", size=8),
+                ),
+                row=1, col=1
+            )
+        if not np.isnan(previous_high_low_data["PreviousLow"][i]):
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[previous_high_low_data["PreviousLow"][i]],
+                    mode="markers",
+                    marker=dict(symbol="circle", size=8, color="rgba(0, 255, 0, 0.8)"),
+                ),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[i]], y=[previous_high_low_data["PreviousLow"][i]],
+                    mode="text", text="PL",
+                    textposition="bottom center",
+                    textfont=dict(color="rgba(0, 255, 0, 0.8)", size=8),
+                ),
+                row=1, col=1
+            )
+    
+    # Sessions
+    for i in range(len(sessions["Active"])-1):
+        if sessions["Active"][i] == 1:
+            fig.add_shape(
+                type="rect",
+                x0=window_df.index[i],
+                y0=sessions["Low"][i],
+                x1=window_df.index[i + 1],
+                y1=sessions["High"][i],
+                line=dict(width=0),
+                fillcolor="#16866E",
+                opacity=0.2,
+                xref="x", yref="y"
+            )
+    
+    # Retracements
+    for i in range(len(retracements)):
+        if (
+            (
+                (
+                    retracements["Direction"].iloc[i + 1]
+                    if i < len(retracements) - 1
+                    else 0
+                )
+                != retracements["Direction"].iloc[i]
+                or i == len(retracements) - 1
+            )
+            and retracements["Direction"].iloc[i] != 0
+            and (
+                retracements["Direction"].iloc[i + 1]
+                if i < len(retracements) - 1
+                else retracements["Direction"].iloc[i]
+            )
+            != 0
+        ):
+            fig.add_annotation(
+                x=window_df.index[i],
+                y=(
+                    window_df["high"].iloc[i]
+                    if retracements["Direction"].iloc[i] == -1
+                    else window_df["low"].iloc[i]
+                ),
+                xref="x",
+                yref="y",
+                text=f"C:{retracements['CurrentRetracement%'].iloc[i]}%<br>D:{retracements['DeepestRetracement%'].iloc[i]}%",
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False,
+            )
+    
+    # Equal Highs/Lows
+    # Procesa Equal Highs
+    high_indices = np.where(equal_highs_lows_data["EqualLevel"] == 1)[0]
+    if len(high_indices) > 0:
+        # Agrupa por nivel para evitar duplicados
+        levels = {}
+        for idx in high_indices:
+            level = equal_highs_lows_data["Level"].iloc[idx]
+            count = equal_highs_lows_data["Count"].iloc[idx]
+            strength = equal_highs_lows_data["Strength"].iloc[idx]
+            
+            if level not in levels or strength > levels[level]["strength"]:
+                levels[level] = {
+                    "index": idx,
+                    "count": count,
+                    "strength": strength
+                }
+        
+        # Dibuja líneas horizontales para cada nivel único
+        for level, info in levels.items():
+            fig.add_shape(
+                type="line",
+                x0=window_df.index[0],
+                y0=level,
+                x1=window_df.index[-1],
+                y1=level,
+                line=dict(
+                    color="rgba(255, 165, 0, 0.6)",  # Naranja para equal highs
+                    width=2,
+                    dash="dash",
+                ),
+                xref="x", yref="y"
+            )
+            # Agrega anotación con información
+            fig.add_annotation(
+                x=window_df.index[info["index"]],
+                y=level,
+                xref="x",
+                yref="y",
+                text=f"EH<br>C:{info['count']}<br>S:{info['strength']:.1f}",
+                font=dict(color="rgba(255, 165, 0, 0.8)", size=8),
+                showarrow=False,
+                bgcolor="rgba(0, 0, 0, 0.5)",
+                bordercolor="rgba(255, 165, 0, 0.8)",
+                borderwidth=1,
+            )
+    
+    # Procesa Equal Lows
+    low_indices = np.where(equal_highs_lows_data["EqualLevel"] == -1)[0]
+    if len(low_indices) > 0:
+        # Agrupa por nivel para evitar duplicados
+        levels = {}
+        for idx in low_indices:
+            level = equal_highs_lows_data["Level"].iloc[idx]
+            count = equal_highs_lows_data["Count"].iloc[idx]
+            strength = equal_highs_lows_data["Strength"].iloc[idx]
+            
+            if level not in levels or strength > levels[level]["strength"]:
+                levels[level] = {
+                    "index": idx,
+                    "count": count,
+                    "strength": strength
+                }
+        
+        # Dibuja líneas horizontales para cada nivel único
+        for level, info in levels.items():
+            fig.add_shape(
+                type="line",
+                x0=window_df.index[0],
+                y0=level,
+                x1=window_df.index[-1],
+                y1=level,
+                line=dict(
+                    color="rgba(0, 255, 255, 0.6)",  # Cian para equal lows
+                    width=2,
+                    dash="dash",
+                ),
+                xref="x", yref="y"
+            )
+            # Agrega anotación con información
+            fig.add_annotation(
+                x=window_df.index[info["index"]],
+                y=level,
+                xref="x",
+                yref="y",
+                text=f"EL<br>C:{info['count']}<br>S:{info['strength']:.1f}",
+                font=dict(color="rgba(0, 255, 255, 0.8)", size=8),
+                showarrow=False,
+                bgcolor="rgba(0, 0, 0, 0.5)",
+                bordercolor="rgba(0, 255, 255, 0.8)",
+                borderwidth=1,
+            )
+    
+    # Premium/Discount Zones
+    # Procesa las zonas premium y discount
+    premium_indices = np.where(premium_discount_data["Zone"] == 1)[0]
+    discount_indices = np.where(premium_discount_data["Zone"] == -1)[0]
+    neutral_indices = np.where(premium_discount_data["Zone"] == 0)[0]
+    
+    # Dibuja líneas horizontales para los rangos cuando están disponibles
+    valid_ranges = premium_discount_data.dropna(subset=["RangeHigh", "RangeLow", "MidPoint"])
+    
+    if len(valid_ranges) > 0:
+        # Usa el rango más reciente para visualización
+        latest_range = valid_ranges.iloc[-1]
+        
+        # Línea del swing high
+        fig.add_shape(
+            type="line",
+            x0=window_df.index[0],
+            y0=latest_range["RangeHigh"],
+            x1=window_df.index[-1],
+            y1=latest_range["RangeHigh"],
+            line=dict(
+                color="rgba(255, 0, 0, 0.4)",  # Rojo para swing high
+                width=1,
+                dash="dot",
+            ),
+            xref="x", yref="y"
+        )
+        
+        # Línea del punto medio (50%)
+        fig.add_shape(
+            type="line",
+            x0=window_df.index[0],
+            y0=latest_range["MidPoint"],
+            x1=window_df.index[-1],
+            y1=latest_range["MidPoint"],
+            line=dict(
+                color="rgba(255, 255, 0, 0.6)",  # Amarillo para punto medio
+                width=2,
+                dash="solid",
+            ),
+            xref="x", yref="y"
+        )
+        
+        # Línea del swing low
+        fig.add_shape(
+            type="line",
+            x0=window_df.index[0],
+            y0=latest_range["RangeLow"],
+            x1=window_df.index[-1],
+            y1=latest_range["RangeLow"],
+            line=dict(
+                color="rgba(0, 255, 0, 0.4)",  # Verde para swing low
+                width=1,
+                dash="dot",
+            ),
+            xref="x", yref="y"
+        )
+        
+        # Agrega anotaciones para las zonas
+        fig.add_annotation(
+            x=window_df.index[-1],
+            y=latest_range["RangeHigh"],
+            xref="x",
+            yref="y",
+            text="Swing High",
+            font=dict(color="rgba(255, 0, 0, 0.8)", size=8),
+            showarrow=False,
+            bgcolor="rgba(0, 0, 0, 0.5)",
+            bordercolor="rgba(255, 0, 0, 0.8)",
+            borderwidth=1,
+        )
+        
+        fig.add_annotation(
+            x=window_df.index[-1],
+            y=latest_range["MidPoint"],
+            xref="x",
+            yref="y",
+            text="50% (Mid)",
+            font=dict(color="rgba(255, 255, 0, 0.8)", size=8),
+            showarrow=False,
+            bgcolor="rgba(0, 0, 0, 0.5)",
+            bordercolor="rgba(255, 255, 0, 0.8)",
+            borderwidth=1,
+        )
+        
+        fig.add_annotation(
+            x=window_df.index[-1],
+            y=latest_range["RangeLow"],
+            xref="x",
+            yref="y",
+            text="Swing Low",
+            font=dict(color="rgba(0, 255, 0, 0.8)", size=8),
+            showarrow=False,
+            bgcolor="rgba(0, 0, 0, 0.5)",
+            bordercolor="rgba(0, 255, 0, 0.8)",
+            borderwidth=1,
+        )
+    
+    # Agrega marcadores para las zonas actuales
+    if len(premium_indices) > 0:
+        for idx in premium_indices:
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[idx]], y=[window_df["high"].iloc[idx]],
+                    mode="text", text="PREMIUM",
+                    textposition="top center",
+                    textfont=dict(color="rgba(255, 0, 0, 0.8)", size=8),
+                ),
+                row=1, col=1
+            )
+    
+    if len(discount_indices) > 0:
+        for idx in discount_indices:
+            fig.add_trace(
+                go.Scatter(
+                    x=[window_df.index[idx]], y=[window_df["low"].iloc[idx]],
+                    mode="text", text="DISCOUNT",
+                    textposition="bottom center",
+                    textfont=dict(color="rgba(0, 255, 0, 0.8)", size=8),
+                ),
+                row=1, col=1
+            )
 
     # Configurar layout para subplots
     fig.update_layout(
