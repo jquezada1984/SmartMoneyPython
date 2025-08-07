@@ -5,9 +5,9 @@ import os
 from datetime import datetime
 import numpy as np
 import time
-import imageio
 from io import BytesIO
 from PIL import Image
+import plotly.io as pio
 from tqdm import tqdm
 
 sys.path.append(os.path.abspath("../"))
@@ -21,16 +21,18 @@ def add_FVG(fig, df, fvg_data):
                 if fvg_data["MitigatedIndex"][i] != 0
                 else len(df) - 1
             )
-            # En lugar de shape, usar líneas para crear el rectángulo
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i], df.index[x1], df.index[x1], df.index[i], df.index[i]],
-                    y=[fvg_data["Top"][i], fvg_data["Top"][i], fvg_data["Bottom"][i], fvg_data["Bottom"][i], fvg_data["Top"][i]],
-                    mode="lines",
-                    line=dict(color="yellow", width=4),
-                    name="FVG",
-                    showlegend=False,
-                )
+            fig.add_shape(
+                # filled Rectangle
+                type="rect",
+                x0=df.index[i],
+                y0=fvg_data["Top"][i],
+                x1=df.index[x1],
+                y1=fvg_data["Bottom"][i],
+                line=dict(
+                    width=0,
+                ),
+                fillcolor="yellow",
+                opacity=0.2,
             )
             mid_x = round((i + x1) / 2)
             mid_y = (fvg_data["Top"][i] + fvg_data["Bottom"][i]) / 2
@@ -149,16 +151,18 @@ def add_OB(fig, df, ob_data):
                 if ob_data["MitigatedIndex"][i] != 0
                 else len(df) - 1
             )
-            # En lugar de shape, usar líneas para crear el rectángulo
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i], df.index[x1], df.index[x1], df.index[i], df.index[i]],
-                    y=[ob_data["Bottom"][i], ob_data["Bottom"][i], ob_data["Top"][i], ob_data["Top"][i], ob_data["Bottom"][i]],
-                    mode="lines",
-                    line=dict(color="Purple", width=4),
+            fig.add_shape(
+                type="rect",
+                x0=df.index[i],
+                y0=ob_data["Bottom"][i],
+                x1=df.index[x1],
+                y1=ob_data["Top"][i],
+                line=dict(color="Purple"),
+                fillcolor="Purple",
+                opacity=0.2,
                 name="Bullish OB",
-                    showlegend=False,
-                )
+                legendgroup="bullish ob",
+                showlegend=True,
             )
 
             if ob_data["MitigatedIndex"][i] > 0:
@@ -189,16 +193,18 @@ def add_OB(fig, df, ob_data):
                 if ob_data["MitigatedIndex"][i] != 0
                 else len(df) - 1
             )
-            # En lugar de shape, usar líneas para crear el rectángulo
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i], df.index[x1], df.index[x1], df.index[i], df.index[i]],
-                    y=[ob_data["Bottom"][i], ob_data["Bottom"][i], ob_data["Top"][i], ob_data["Top"][i], ob_data["Bottom"][i]],
-                    mode="lines",
-                    line=dict(color="Purple", width=4),
+            fig.add_shape(
+                type="rect",
+                x0=df.index[i],
+                y0=ob_data["Bottom"][i],
+                x1=df.index[x1],
+                y1=ob_data["Top"][i],
+                line=dict(color="Purple"),
+                fillcolor="Purple",
+                opacity=0.2,
                 name="Bearish OB",
-                    showlegend=False,
-                )
+                legendgroup="bearish ob",
+                showlegend=True,
             )
 
             if ob_data["MitigatedIndex"][i] > 0:
@@ -363,16 +369,17 @@ def add_previous_high_low(fig, df, previous_high_low_data):
 def add_sessions(fig, df, sessions):
     for i in range(len(sessions["Active"])-1):
         if sessions["Active"][i] == 1:
-            # En lugar de shape, usar líneas para crear el rectángulo
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i], df.index[i + 1], df.index[i + 1], df.index[i], df.index[i]],
-                    y=[sessions["Low"][i], sessions["Low"][i], sessions["High"][i], sessions["High"][i], sessions["Low"][i]],
-                    mode="lines",
-                    line=dict(color="#16866E", width=3),
-                    name="Session",
-                    showlegend=False,
-                )
+            fig.add_shape(
+                type="rect",
+                x0=df.index[i],
+                y0=sessions["Low"][i],
+                x1=df.index[i + 1],
+                y1=sessions["High"][i],
+                line=dict(
+                    width=0,
+                ),
+                fillcolor="#16866E",
+                opacity=0.2,
             )
     return fig
 
@@ -414,67 +421,43 @@ def add_retracements(fig, df, retracements):
 
 
 # get the data
-def import_data(csv_path):
-    """
-    Importa datos desde CSV
-    """
-    try:
-        print(f"📊 Importando datos desde {csv_path}...")
-        df = pd.read_csv(csv_path)
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df = df.set_index('datetime')
-        
-        # Asegurar que las columnas numéricas sean float
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Eliminar filas con valores NaN
-        df = df.dropna()
-        
-        print(f"✅ Datos importados: {len(df)} registros")
-        print(f"📈 Rango de fechas: {df.index[0]} a {df.index[-1]}")
-        return df
-    except Exception as e:
-        print(f"❌ Error al importar datos: {e}")
-        return None
+def import_data():
+    # Reemplaza la función import_data y la carga de df por esto:
+    csv_path = "tests/test_data/EURUSD/EURUSD_15M_20250806_091313.csv"
+    """Importa datos desde CSV - procesados igual que los datos de Binance"""
+    # Leer el CSV desde el directorio raíz
+    df = pd.read_csv(csv_path, index_col="datetime")
+    
+    # Convertir todas las columnas a float (igual que en Binance)
+    df = df.astype(float)    
+    # Asegurar que las columnas estén en el orden correcto
+    df = df[["open", "high", "low", "close", "volume"]]    
+    # Convertir el índice a datetime y luego a string con formato específico (igual que Binance)
+    df.index = pd.to_datetime(df.index)
+    df.index = df.index.strftime("%Y-%m-%d %H:%M:%S")    
+    # Tomar las últimas 500 filas (igual que en Binance)
+    df = df.iloc[-500:]
+    
+    return df
 
 
-# Importar datos desde CSV
-csv_path = r"C:\Proyectos\SmartMoneyPython\tests\test_data\EURUSD\EURUSD_15M_20250806_091313.csv"
-df = import_data(csv_path)
-if df is None:
-    print("❌ No se pudieron importar los datos. Saliendo...")
-    exit(1)
-
-def fig_to_buffer(fig):
-    try:
-        fig_bytes = fig.to_image(format="png", width=500, height=300)
-    fig_buffer = BytesIO(fig_bytes)
-    fig_image = Image.open(fig_buffer)
-        return fig_image  # Retornar la imagen PIL directamente
-    except Exception as e:
-        print(f"⚠️ Error al generar frame: {e}")
-        # Crear una imagen en blanco como fallback
-        blank_image = Image.new('RGB', (500, 300), color='black')
-        return blank_image
+df = import_data()
+df = df.iloc[-500:]
 
 
-# Crear carpeta para frames si no existe
+
+
+# Crear carpeta para frames PNG si no existe
 import os
 frames_dir = "frames_png"
-if not os.path.exists(frames_dir):
-    os.makedirs(frames_dir)
+# Si la carpeta existe, eliminar todo su contenido
+if os.path.exists(frames_dir):
+    shutil.rmtree(frames_dir)  # Elimina toda la carpeta y su contenido
+os.makedirs(frames_dir)        # La vuelve a crear vacía
 
 window = 100
-print(f"🎬 Preparando generación de frames PNG con {len(df)} velas (ventana de {window} velas)")
-print(f"📈 Se generarán {len(df) - window} frames PNG")
-print(f"📁 Los frames se guardarán en: {frames_dir}/")
-
-print("🎨 Generando frames PNG...")
-# Para debug, solo generar frame 104
-for pos in tqdm(range(104, 105), desc="Generando frames", unit="frame"):
+print(f"🎬 Generando {len(df) - window} frames PNG...")
+for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     window_df = df.iloc[pos - window : pos]
 
     fig = go.Figure(
@@ -499,61 +482,6 @@ for pos in tqdm(range(104, 105), desc="Generando frames", unit="frame"):
     previous_high_low_data = smc.previous_high_low(window_df, time_frame="4h")
     sessions = smc.sessions(window_df, session="London")
     retracements = smc.retracements(window_df, swing_highs_lows_data)
-    
-    # Debug específico para frame 104
-    print(f"🔍 Debug Frame {pos}:")
-    print(f"   - Order Blocks detectados: {len([x for x in ob_data['OB'] if not np.isnan(x)])}")
-    print(f"   - FVG detectados: {len([x for x in fvg_data['FVG'] if not np.isnan(x)])}")
-    print(f"   - Sesiones activas: {len([x for x in sessions['Active'] if x == 1])}")
-    print(f"   - Swing highs/lows: {len([x for x in swing_highs_lows_data['HighLow'] if not np.isnan(x)])}")
-    
-    # Debug detallado de FVG
-    print(f"\n📊 Debug FVG:")
-    for i in range(len(fvg_data["FVG"])):
-        if not np.isnan(fvg_data["FVG"][i]):
-            x1 = int(fvg_data["MitigatedIndex"][i] if fvg_data["MitigatedIndex"][i] != 0 else len(window_df) - 1)
-            print(f"   FVG {i}: x0={window_df.index[i]}, y0={fvg_data['Top'][i]:.5f}, x1={window_df.index[x1]}, y1={fvg_data['Bottom'][i]:.5f}")
-            if i >= 2:  # Solo mostrar primeros 3
-                break
-    
-    # Debug detallado de Order Blocks
-    print(f"\n🟣 Debug Order Blocks:")
-    for i in range(len(ob_data["OB"])):
-        if not np.isnan(ob_data["OB"][i]):
-            x1 = int(ob_data["MitigatedIndex"][i] if ob_data["MitigatedIndex"][i] != 0 else len(window_df) - 1)
-            print(f"   OB {i}: tipo={ob_data['OB'][i]}, x0={window_df.index[i]}, y0={ob_data['Bottom'][i]:.5f}, x1={window_df.index[x1]}, y1={ob_data['Top'][i]:.5f}")
-            if i >= 1:  # Solo mostrar primeros 2
-                break
-    
-    # Debug del rango de precios
-    print(f"\n💰 Rango de precios en ventana:")
-    print(f"   - Precio mínimo: {window_df['low'].min():.5f}")
-    print(f"   - Precio máximo: {window_df['high'].max():.5f}")
-    print(f"   - Rango total: {window_df['high'].max() - window_df['low'].min():.5f}")
-
-    # PRUEBA DIRECTA: Agregar líneas de prueba para verificar que funcionan
-    fig.add_trace(
-        go.Scatter(
-            x=[window_df.index[10], window_df.index[50]],
-            y=[window_df['high'].max(), window_df['high'].max()],
-            mode="lines",
-            line=dict(color="red", width=5),
-            name="TEST LINE",
-            showlegend=False,
-        )
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=[window_df.index[20], window_df.index[60]],
-            y=[window_df['low'].min(), window_df['low'].min()],
-            mode="lines",
-            line=dict(color="cyan", width=5),
-            name="TEST LINE 2",
-            showlegend=False,
-        )
-    )
-    
     fig = add_FVG(fig, window_df, fvg_data)
     fig = add_swing_highs_lows(fig, window_df, swing_highs_lows_data)
     fig = add_bos_choch(fig, window_df, bos_choch_data)
@@ -563,34 +491,29 @@ for pos in tqdm(range(104, 105), desc="Generando frames", unit="frame"):
     fig = add_sessions(fig, window_df, sessions)
     fig = add_retracements(fig, window_df, retracements)
 
-    fig.update_layout(xaxis_rangeslider_visible=False)
-    fig.update_layout(showlegend=True)  # Mostrar leyenda para debug
-    fig.update_layout(margin=dict(l=20, r=20, b=20, t=20))  # Márgenes mínimos pero no cero
-    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)")
-    fig.update_layout(paper_bgcolor="rgba(12, 14, 18, 1)")
-    fig.update_layout(font=dict(color="white"))
-
-    # reduce the size of the image
-    fig.update_layout(width=500, height=300)
-
-    # Forzar actualización de la figura para asegurar renderizado
-    fig.update_layout(showlegend=False)
-    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
-
-    # Generar frame y guardar como PNG
-    frame = fig_to_buffer(fig)
+# Estética del gráfico
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        showlegend=False,
+        margin=dict(l=0, r=0, b=0, t=0),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(12, 14, 18, 1)",
+        font=dict(color="white"),
+        width=500,
+        height=300
+    )
+    fig.update_xaxes(visible=False, showticklabels=False)
+    fig.update_yaxes(visible=False, showticklabels=False)
     
-    # Guardar frame como PNG
-    frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
-    frame.save(frame_filename, "PNG")
-    
-    # Limpiar memoria de la figura
-    del fig
+    # Guardar el frame como imagen PNG usando KaleidoScope
+    try:
+        frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
+        image_bytes = scope.transform(fig, format="png")
+        with open(frame_filename, "wb") as f:
+            f.write(image_bytes)
+    except Exception as e:
+        print(f"[WARNING] Frame en posición {pos} falló: {e}")
+        
 
-print(f"✅ ¡Frames PNG generados exitosamente!")
-print(f"📁 Frames guardados en: {frames_dir}/")
-print(f"📊 Resumen:")
-print(f"   - Frames generados: {len(df) - window}")
-print(f"   - Tamaño de imagen: 500x300 píxeles")
-print(f"   - Formato: PNG individual")
-print(f"   - Nomenclatura: frame_XXXX.png")
+print(f"✅ Frames PNG guardados en: {frames_dir}/")
+print(f"📊 Total de frames generados: {len(df) - window}")

@@ -1,0 +1,33 @@
+# SmartMoneyPython - Dependencias de Python
+# Archivo de requisitos para instalar todas las dependencias del proyecto
+
+# Dependencias principales del proyecto (según setup.py)
+pandas>=2.0.2
+numpy>=1.24.3
+numba>=0.58.1
+
+# MetaTrader 5 - Para conexión con MT5
+MetaTrader5>=5.0.45
+
+# Visualización y generación de GIFs
+plotly>=5.15.0
+kaleido>=0.2.1  # Requerido por plotly para exportar imágenes
+imageio>=2.31.0  # Para crear GIFs animados
+Pillow>=10.0.0   # PIL para procesamiento de imágenes
+tqdm>=4.65.0     # Barras de progreso
+
+# Backtesting (para estrategias)
+backtrader>=1.9.78.123
+
+# Utilidades adicionales
+argparse  # Incluido en Python estándar, pero documentado aquí
+typing    # Incluido en Python estándar, pero documentado aquí
+
+# Dependencias opcionales (para desarrollo)
+# setuptools>=65.0.0  # Para instalación del paquete
+# codecs  # Incluido en Python estándar
+
+# Notas de instalación:
+# 1. Instalar todas las dependencias: pip install -r requirements.txt
+# 2. Instalar el paquete en modo editable: pip install -e .
+# 3. Para desarrollo, también instalar: pip install black pytest 

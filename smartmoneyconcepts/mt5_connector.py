@@ -147,7 +147,9 @@ class MT5Connector:
             
             # Renombrar columnas para compatibilidad con SMC
             df.columns = ['open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
-            df = df[['open', 'high', 'low', 'close', 'real_volume']]  # Solo OHLCV
+            # Usar tick_volume como volumen (más confiable en forex)
+            df = df[['open', 'high', 'low', 'close', 'tick_volume']]  # Solo OHLCV
+            df = df.rename(columns={'tick_volume': 'real_volume'})  # Renombrar para compatibilidad
             
             print(f"✅ Obtenidos {len(df)} registros de {symbol} ({timeframe})")
             return df

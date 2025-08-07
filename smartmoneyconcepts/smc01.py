@@ -1,27 +1,3 @@
-"""
-Smart Money Concepts (SMC) - Biblioteca de Análisis Técnico
-
-Esta biblioteca implementa los conceptos de Smart Money (dinero inteligente) 
-utilizados en el análisis técnico de mercados financieros.
-
-Conceptos implementados:
-- FVG (Fair Value Gap): Gaps de valor justo
-- Swing Highs/Lows: Máximos y mínimos de oscilación
-- BOS/CHOCH: Break of Structure y Change of Character
-- Order Blocks (OB): Bloques de órdenes
-- Liquidity: Niveles de liquidez
-- Previous High/Low: Máximos y mínimos previos
-- Trading Sessions: Sesiones de trading
-- Retracements: Retrocesos
-- Equal Highs/Lows: Máximos y mínimos iguales
-- Premium/Discount Zones: Zonas de prima/descuento
-- Trend Indicator: Indicador de tendencia
-- VWAP: Volume Weighted Average Price
-
-Autor: SmartMoneyPython
-Versión: 0.0.26
-"""
-
 from functools import wraps
 import pandas as pd
 import numpy as np
@@ -74,38 +50,14 @@ def apply(decorator):
 
 @apply(inputvalidator(input_="ohlc"))
 class smc:
-    __version__ = "0.0.26"
+    __version__ = "0.0.29"
 
     @classmethod
-    def fvg(cls, ohlc: DataFrame, join_consecutive=False) -> Series:
+    def fvg(cls, ohlc: DataFrame, join_consecutive=False) -> DataFrame:
         """
-        FVG - Fair Value Gap (Gap de Valor Justo)
-        
-        Un gap de valor justo ocurre cuando el máximo anterior es menor que el mínimo siguiente 
-        si la vela actual es alcista, o cuando el mínimo anterior es mayor que el máximo siguiente 
-        si la vela actual es bajista.
-
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        join_consecutive : bool, opcional
-            Si es True, múltiples FVG consecutivos se fusionarán en uno usando 
-            el máximo superior y el mínimo inferior
-
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - FVG: 1 si gap alcista, -1 si gap bajista, NaN si no hay gap
-        - Top: Precio superior del gap
-        - Bottom: Precio inferior del gap  
-        - MitigatedIndex: Índice de la vela que mitigó el gap
-
-        Ejemplo:
-        --------
-        >>> fvg_data = smc.fvg(df, join_consecutive=True)
+        FVG - Gap de Valor Justo
+        Siempre retorna un DataFrame con columnas ['FVG', 'high', 'low', 'close'].
         """
-
         fvg = np.where(
             (
                 (ohlc["high"].shift(1) < ohlc["low"].shift(-1))
@@ -139,7 +91,7 @@ class smc:
             np.nan,
         )
 
-        # if there are multiple consecutive fvg then join them together using the highest top and lowest bottom and the last index
+        # si hay múltiples fvg consecutivos, únelos usando el máximo más alto y el mínimo más bajo y el último índice
         if join_consecutive:
             for i in range(len(fvg) - 1):
                 if fvg[i] == fvg[i + 1]:
@@ -160,46 +112,43 @@ class smc:
 
         mitigated_index = np.where(np.isnan(fvg), np.nan, mitigated_index)
 
-        return pd.concat(
-            [
-                pd.Series(fvg, name="FVG"),
-                pd.Series(top, name="Top"),
-                pd.Series(bottom, name="Bottom"),
-                pd.Series(mitigated_index, name="MitigatedIndex"),
-            ],
-            axis=1,
-        )
+        # Construir DataFrame resultado
+        resultado = pd.DataFrame({
+            "FVG": fvg,
+            "Top": top,
+            "Bottom": bottom,
+            "MitigatedIndex": mitigated_index,
+        }, index=ohlc.index)
+
+        # Añadir columnas estándar si faltan
+        columnas_necesarias = ['FVG', 'high', 'low', 'close']
+        for col in columnas_necesarias:
+            if col not in resultado.columns:
+                if col in ohlc.columns:
+                    resultado[col] = ohlc[col].values[:len(resultado)]
+                else:
+                    resultado[col] = np.nan
+        # Reordenar columnas
+        cols_final = columnas_necesarias + [c for c in resultado.columns if c not in columnas_necesarias]
+        return resultado[cols_final]
 
     @classmethod
     def swing_highs_lows(cls, ohlc: DataFrame, swing_length: int = 50) -> Series:
         """
-        Swing Highs and Lows (Máximos y Mínimos de Oscilación)
-        
-        Un swing high es cuando el máximo actual es el máximo más alto entre la cantidad 
-        de velas especificada antes y después. Un swing low es cuando el mínimo actual 
-        es el mínimo más bajo entre la cantidad de velas especificada antes y después.
+        Swing Highs y Lows
+        Un swing high es cuando el máximo actual es el máximo más alto de la cantidad swing_length de velas antes y después.
+        Un swing low es cuando el mínimo actual es el mínimo más bajo de la cantidad swing_length de velas antes y después.
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_length : int, opcional
-            Cantidad de velas a revisar hacia atrás y adelante para determinar 
-            el swing high o low (por defecto: 50)
+        parámetros:
+        swing_length: int - la cantidad de velas para mirar hacia atrás y hacia adelante para determinar el swing high o low
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - HighLow: 1 si swing high, -1 si swing low, NaN si no es swing
-        - Level: Nivel del swing high o low
-
-        Ejemplo:
-        --------
-        >>> swing_data = smc.swing_highs_lows(df, swing_length=20)
+        retorna:
+        HighLow = 1 si swing high, -1 si swing low
+        Level = el nivel del swing high o low
         """
 
         swing_length *= 2
-        # set the highs to 1 if the current high is the highest high in the last 5 candles and next 5 candles
+        # establece los máximos a 1 si el máximo actual es el máximo más alto en las últimas 5 velas y las siguientes 5 velas
         swing_highs_lows = np.where(
             ohlc["high"]
             == ohlc["high"].shift(-(swing_length // 2)).rolling(swing_length).max(),
@@ -273,32 +222,19 @@ class smc:
         cls, ohlc: DataFrame, swing_highs_lows: DataFrame, close_break: bool = True
     ) -> Series:
         """
-        BOS - Break of Structure (Ruptura de Estructura)
-        CHOCH - Change of Character (Cambio de Carácter)
-        
-        Ambos son indicaciones de cambios en la estructura del mercado.
+        BOS - Rotura de Estructura
+        CHoCH - Cambio de Carácter
+        estos son ambos indicaciones de cambio en la estructura del mercado
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_highs_lows : DataFrame
-            DataFrame resultante de la función swing_highs_lows
-        close_break : bool, opcional
-            Si es True, la ruptura de estructura se determinará basándose en el cierre 
-            de la vela, de lo contrario se usará high/low (por defecto: True)
+        parámetros:
+        swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows
+        close_break: bool - si es True entonces la ruptura de estructura se mitigará basándose en el cierre de la vela, de lo contrario será el high/low.
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - BOS: 1 si ruptura alcista, -1 si ruptura bajista, 0 si no hay ruptura
-        - CHOCH: 1 si cambio de carácter alcista, -1 si bajista, 0 si no hay cambio
-        - Level: Nivel de la ruptura o cambio de carácter
-        - BrokenIndex: Índice de la vela que rompió el nivel
-
-        Ejemplo:
-        --------
-        >>> bos_data = smc.bos_choch(df, swing_data, close_break=True)
+        retorna:
+        BOS = 1 si ruptura de estructura alcista, -1 si ruptura de estructura bajista
+        CHOCH = 1 si cambio de carácter alcista, -1 si cambio de carácter bajista
+        Level = el nivel de la ruptura de estructura o cambio de carácter
+        BrokenIndex = el índice de la vela que rompió el nivel
         """
 
         swing_highs_lows = swing_highs_lows.copy()
@@ -313,9 +249,9 @@ class smc:
         last_positions = []
 
         for i in range(len(swing_highs_lows["HighLow"])):
-            if not np.isnan(swing_highs_lows["HighLow"][i]):
-                level_order.append(swing_highs_lows["Level"][i])
-                highs_lows_order.append(swing_highs_lows["HighLow"][i])
+            if not np.isnan(swing_highs_lows["HighLow"].iloc[i]):
+                level_order.append(swing_highs_lows["Level"].iloc[i])
+                highs_lows_order.append(swing_highs_lows["HighLow"].iloc[i])
                 if len(level_order) >= 4:
                     # bullish bos
                     bos[last_positions[-2]] = (
@@ -443,34 +379,19 @@ class smc:
         close_mitigation: bool = False,
     ) -> Series:
         """
-        OB - Order Blocks (Bloques de Órdenes)
-        
-        Este método detecta bloques de órdenes cuando existe una alta cantidad de 
-        órdenes de mercado en un rango de precios específico.
+        OB - Bloques de Órdenes
+        Este método detecta order blocks cuando existe una alta cantidad de órdenes de mercado en un rango de precios.
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_highs_lows : DataFrame
-            DataFrame resultante de la función swing_highs_lows
-        close_mitigation : bool, opcional
-            Si es True, el bloque de órdenes se mitigará basándose en el cierre de la vela, 
-            de lo contrario se usará high/low (por defecto: False)
+        parámetros:
+        swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows
+        close_mitigation: bool - si es True entonces el order block se mitigará basándose en el cierre de la vela, de lo contrario será el high/low.
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - OB: 1 si bloque alcista, -1 si bloque bajista, 0 si no hay bloque
-        - Top: Precio superior del bloque de órdenes
-        - Bottom: Precio inferior del bloque de órdenes
-        - OBVolume: Volumen + 2 últimos volúmenes
-        - Percentage: Fuerza del bloque de órdenes (min(highVolume, lowVolume)/max(highVolume, lowVolume))
-        - MitigatedIndex: Índice de la vela que mitigó el bloque
-
-        Ejemplo:
-        --------
-        >>> ob_data = smc.ob(df, swing_data, close_mitigation=False)
+        retorna:
+        OB = 1 si order block alcista, -1 si order block bajista
+        Top = tope del order block
+        Bottom = fondo del order block
+        OBVolume = volumen + 2 últimos volúmenes
+        Percentage = fuerza del order block (min(highVolume, lowVolume)/max(highVolume, lowVolume))
         """
 
         ohlc_len = len(ohlc)
@@ -650,57 +571,45 @@ class smc:
     @classmethod
     def liquidity(cls, ohlc: DataFrame, swing_highs_lows: DataFrame, range_percent: float = 0.01) -> Series:
         """
-        Liquidity (Liquidez)
-        
-        La liquidez se identifica cuando hay múltiples máximos dentro de un pequeño rango 
-        entre sí, o múltiples mínimos dentro de un pequeño rango entre sí.
+        Liquidez
+        Liquidez es cuando hay múltiples máximos dentro de un pequeño rango entre sí,
+        o múltiples mínimos dentro de un pequeño rango entre sí.
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_highs_lows : DataFrame
-            DataFrame resultante de la función swing_highs_lows
-        range_percent : float, opcional
-            Porcentaje del rango para determinar la liquidez (por defecto: 0.01)
+        parámetros:
+        swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows
+        range_percent: float - el porcentaje del rango para determinar la liquidez
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - Liquidity: 1 si liquidez alcista, -1 si liquidez bajista, NaN si no hay liquidez
-        - Level: Nivel de la liquidez
-        - End: Índice del último nivel de liquidez
-        - Swept: Índice de la vela que barrió la liquidez
-
-        Ejemplo:
-        --------
-        >>> liquidity_data = smc.liquidity(df, swing_data, range_percent=0.005)
+        retorna:
+        Liquidity = 1 si liquidez alcista, -1 si liquidez bajista
+        Level = el nivel de la liquidez
+        End = el índice del último nivel de liquidez
+        Swept = el índice de la vela que barrió la liquidez
         """
 
-        # Work on a copy so the original is not modified.
+        # Trabaja en una copia para que el original no se modifique.
         shl = swing_highs_lows.copy()
         n = len(ohlc)
         
-        # Calculate the pip range based on the overall high-low range.
-        pip_range = (ohlc["high"].max() - ohlc["low"].min()) * range_percent
+        # Calcula el rango de pips basado en el rango general alto-bajo.
+        pip_range = (np.max(np.array(ohlc["high"])) - np.min(np.array(ohlc["low"]))) * range_percent
 
-        # Preconvert required columns to numpy arrays.
+        # Preconvierte las columnas requeridas a arrays de numpy.
         ohlc_high = ohlc["high"].values
         ohlc_low = ohlc["low"].values
-        # Make a copy to allow in-place marking of used candidates.
+        # Haz una copia para permitir el marcado in-place de candidatos usados.
         shl_HL = shl["HighLow"].values.copy()
         shl_Level = shl["Level"].values.copy()
 
-        # Initialise output arrays with NaN (to match later replacement of zeros).
+        # Inicializa arrays de salida con NaN (para coincidir con el reemplazo posterior de ceros).
         liquidity = np.full(n, np.nan, dtype=np.float32)
         liquidity_level = np.full(n, np.nan, dtype=np.float32)
         liquidity_end = np.full(n, np.nan, dtype=np.float32)
         liquidity_swept = np.full(n, np.nan, dtype=np.float32)
 
-        # Process bullish liquidity (HighLow == 1)
-        bull_indices = np.nonzero(shl_HL == 1)[0]
+        # Procesa liquidez alcista (HighLow == 1)
+        bull_indices = np.nonzero(np.array(shl_HL) == 1)[0]
         for i in bull_indices:
-            # Skip if this candidate has already been used.
+            # Salta si este candidato ya ha sido usado.
             if shl_HL[i] != 1:
                 continue
             high_level = shl_Level[i]
@@ -709,8 +618,8 @@ class smc:
             group_levels = [high_level]
             group_end = i
 
-            # Determine the swept index:
-            # Find the first candle after i where the high reaches or exceeds range_high.
+            # Determina el índice barrido:
+            # Encuentra la primera vela después de i donde el máximo alcanza o excede range_high.
             c_start = i + 1
             if c_start < n:
                 cond = ohlc_high[c_start:] >= range_high
@@ -721,19 +630,19 @@ class smc:
             else:
                 swept = 0
 
-            # Iterate only over candidate indices greater than i.
+            # Itera solo sobre índices candidatos mayores que i.
             for j in bull_indices:
                 if j <= i:
                     continue
-                # Emulate the inner loop break: if we've reached or passed the swept index, stop.
+                # Emula la ruptura del bucle interno: si hemos alcanzado o pasado el índice barrido, detente.
                 if swept and j >= swept:
                     break
-                # If candidate j is within the liquidity range, add it and mark it as used.
+                # Si el candidato j está dentro del rango de liquidez, agrégalo y márcalo como usado.
                 if shl_HL[j] == 1 and (range_low <= shl_Level[j] <= range_high):
                     group_levels.append(shl_Level[j])
                     group_end = j
-                    shl_HL[j] = 0  # mark candidate as used
-            # Only record liquidity if more than one candidate is grouped.
+                    shl_HL[j] = 0  # marca candidato como usado
+            # Solo registra liquidez si más de un candidato está agrupado.
             if len(group_levels) > 1:
                 avg_level = sum(group_levels) / len(group_levels)
                 liquidity[i] = 1
@@ -741,7 +650,7 @@ class smc:
                 liquidity_end[i] = group_end
                 liquidity_swept[i] = swept
 
-        # Process bearish liquidity (HighLow == -1)
+        # Procesa liquidez bajista (HighLow == -1)
         bear_indices = np.nonzero(shl_HL == -1)[0]
         for i in bear_indices:
             if shl_HL[i] != -1:
@@ -752,7 +661,7 @@ class smc:
             group_levels = [low_level]
             group_end = i
 
-            # Find the first candle after i where the low reaches or goes below range_low.
+            # Encuentra la primera vela después de i donde el mínimo alcanza o va por debajo de range_low.
             c_start = i + 1
             if c_start < n:
                 cond = ohlc_low[c_start:] <= range_low
@@ -779,7 +688,7 @@ class smc:
                 liquidity_end[i] = group_end
                 liquidity_swept[i] = swept
 
-        # Convert arrays to Series with the proper names.
+        # Convierte arrays a Series con los nombres apropiados.
         liq_series = pd.Series(liquidity, name="Liquidity")
         level_series = pd.Series(liquidity_level, name="Level")
         end_series = pd.Series(liquidity_end, name="End")
@@ -790,29 +699,17 @@ class smc:
     @classmethod
     def previous_high_low(cls, ohlc: DataFrame, time_frame: str = "1D") -> Series:
         """
-        Previous High and Low (Máximos y Mínimos Previos)
-        
-        Este método retorna los máximos y mínimos previos del marco temporal especificado.
+        High Low Anterior
+        Este método retorna el máximo y mínimo anterior del marco de tiempo dado.
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        time_frame : str, opcional
-            Marco temporal para obtener máximos y mínimos previos: 15m, 1H, 4H, 1D, 1W, 1M
-            (por defecto: "1D")
+        parámetros:
+        time_frame: str - el marco de tiempo para obtener el máximo y mínimo anterior 15m, 1H, 4H, 1D, 1W, 1M
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - PreviousHigh: Máximo previo del marco temporal
-        - PreviousLow: Mínimo previo del marco temporal
-        - BrokenHigh: 1 cuando el precio ha roto el máximo previo, 0 en caso contrario
-        - BrokenLow: 1 cuando el precio ha roto el mínimo previo, 0 en caso contrario
-
-        Ejemplo:
-        --------
-        >>> prev_data = smc.previous_high_low(df, time_frame="4h")
+        retorna:
+        PreviousHigh = el máximo anterior
+        PreviousLow = el mínimo anterior
+        BrokenHigh = 1 una vez que el precio ha roto el máximo anterior del timeframe, 0 en caso contrario
+        BrokenLow = 1 una vez que el precio ha roto el mínimo anterior del timeframe, 0 en caso contrario
         """
 
         ohlc.index = pd.to_datetime(ohlc.index)
@@ -874,34 +771,19 @@ class smc:
         time_zone: str = "UTC",
     ) -> Series:
         """
-        Sessions (Sesiones de Trading)
-        
-        Este método identifica qué velas están dentro de la sesión especificada.
+        Sesiones
+        Este método retorna qué velas están dentro de la sesión especificada
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        session : str
-            Sesión a verificar: Sydney, Tokyo, London, New York, Asian kill zone, 
-            London open kill zone, New York kill zone, London close kill zone, Custom
-        start_time : str, opcional
-            Hora de inicio de la sesión en formato "HH:MM" (solo requerido para sesión personalizada)
-        end_time : str, opcional
-            Hora de fin de la sesión en formato "HH:MM" (solo requerido para sesión personalizada)
-        time_zone : str, opcional
-            Zona horaria de las velas en formato "UTC+0" o "GMT+0" (por defecto: "UTC")
+        parámetros:
+        session: str - la sesión que quieres verificar (Sydney, Tokyo, London, New York, Asian kill zone, London open kill zone, New York kill zone, london close kill zone, Custom)
+        start_time: str - la hora de inicio de la sesión en formato "HH:MM" solo requerido para sesión personalizada.
+        end_time: str - la hora de fin de la sesión en formato "HH:MM" solo requerido para sesión personalizada.
+        time_zone: str - la zona horaria de las velas puede estar en formato "UTC+0" o "GMT+0"
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - Active: 1 si la vela está dentro de la sesión, 0 si no
-        - High: Punto más alto de la sesión
-        - Low: Punto más bajo de la sesión
-
-        Ejemplo:
-        --------
-        >>> sessions_data = smc.sessions(df, session="London", time_zone="UTC")
+        retorna:
+        Active = 1 si la vela está dentro de la sesión, 0 si no
+        High = el punto más alto de la sesión
+        Low = el punto más bajo de la sesión
         """
 
         if session == "Custom" and (start_time == "" or end_time == ""):
@@ -961,14 +843,14 @@ class smc:
         ).strftime("%H:%M")
         end_time = datetime.strptime(end_time, "%H:%M")
 
-        # if the candles are between the start and end time then it is an active session
+        # si las velas están entre la hora de inicio y fin entonces es una sesión activa
         active = np.zeros(len(ohlc), dtype=np.int32)
         high = np.zeros(len(ohlc), dtype=np.float32)
         low = np.zeros(len(ohlc), dtype=np.float32)
 
         for i in range(len(ohlc)):
             current_time = ohlc.index[i].strftime("%H:%M")
-            # convert current time to the second of the day
+            # convierte la hora actual al segundo del día
             current_time = datetime.strptime(current_time, "%H:%M")
             if (start_time < end_time and start_time <= current_time <= end_time) or (
                 start_time >= end_time
@@ -990,27 +872,16 @@ class smc:
     @classmethod
     def retracements(cls, ohlc: DataFrame, swing_highs_lows: DataFrame) -> Series:
         """
-        Retracements (Retrocesos)
-        
-        Este método calcula el porcentaje de retroceso desde un swing high o low.
+        Retroceso
+        Este método retorna el porcentaje de un retroceso desde el swing high o low
 
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_highs_lows : DataFrame
-            DataFrame resultante de la función swing_highs_lows
+        parámetros:
+        swing_highs_lows: DataFrame - proporciona el dataframe de la función swing_highs_lows
 
-        Retorna:
-        --------
-        DataFrame con columnas:
-        - Direction: 1 si retroceso alcista, -1 si retroceso bajista, 0 si no hay retroceso
-        - CurrentRetracement%: Porcentaje actual de retroceso desde el swing high o low
-        - DeepestRetracement%: Porcentaje más profundo de retroceso desde el swing high o low
-
-        Ejemplo:
-        --------
-        >>> retracements_data = smc.retracements(df, swing_data)
+        retorna:
+        Direction = 1 si retroceso alcista, -1 si retroceso bajista
+        CurrentRetracement% = el porcentaje de retroceso actual desde el swing high o low
+        DeepestRetracement% = el porcentaje de retroceso más profundo desde el swing high o low
         """
 
         swing_highs_lows = swing_highs_lows.copy()
@@ -1022,13 +893,13 @@ class smc:
         top = 0
         bottom = 0
         for i in range(len(ohlc)):
-            if swing_highs_lows["HighLow"][i] == 1:
+            if swing_highs_lows["HighLow"].iloc[i] == 1:
                 direction[i] = 1
-                top = swing_highs_lows["Level"][i]
+                top = swing_highs_lows["Level"].iloc[i]
                 # deepest_retracement[i] = 0
-            elif swing_highs_lows["HighLow"][i] == -1:
+            elif swing_highs_lows["HighLow"].iloc[i] == -1:
                 direction[i] = -1
-                bottom = swing_highs_lows["Level"][i]
+                bottom = swing_highs_lows["Level"].iloc[i]
                 # deepest_retracement[i] = 0
             else:
                 direction[i] = direction[i - 1] if i > 0 else 0
@@ -1058,12 +929,12 @@ class smc:
                     current_retracement[i],
                 )
 
-        # shift the arrays by 1
+        # desplaza los arrays por 1
         current_retracement = np.roll(current_retracement, 1)
         deepest_retracement = np.roll(deepest_retracement, 1)
         direction = np.roll(direction, 1)
 
-        # remove the first 3 retracements as they get calculated incorrectly due to not enough data
+        # elimina los primeros 3 retrocesos ya que se calculan incorrectamente debido a datos insuficientes
         remove_first_count = 0
         for i in range(len(direction)):
             if i + 1 == len(direction):
@@ -1332,29 +1203,8 @@ class smc:
     @classmethod
     def trend_indicator(cls, ohlc: DataFrame, swing_highs_lows: DataFrame, lookback_period: int = 20) -> pd.DataFrame:
         """
-        Trend Indicator (Indicador de Tendencia)
-        
-        Este método identifica la tendencia estructural del mercado basándose en 
-        los swing highs y lows, así como en otros indicadores SMC.
-
-        Parámetros:
-        -----------
-        ohlc : DataFrame
-            DataFrame con columnas OHLC (open, high, low, close)
-        swing_highs_lows : DataFrame
-            DataFrame resultante de la función swing_highs_lows
-        lookback_period : int, opcional
-            Período de lookback para analizar la tendencia (por defecto: 20)
-
-        Retorna:
-        --------
-        DataFrame con columna:
-        - Trend: 0 = sin tendencia, +1 = alcista, +2 = alcista fuerte, 
-                -1 = bajista, -2 = bajista fuerte
-
-        Ejemplo:
-        --------
-        >>> trend_data = smc.trend_indicator(df, swing_data, lookback_period=30)
+        Indicador de Tendencia estructural menos estricto:
+        0 = sin tendencia, +1 = alcista, +2 = alcista fuerte, -1 = bajista, -2 = bajista fuerte
         """
         n = len(ohlc)
         trend = np.full(n, np.nan, dtype=np.float32)
@@ -1412,29 +1262,9 @@ class smc:
     @staticmethod
     def vwap(df):
         """
-        VWAP - Volume Weighted Average Price (Precio Promedio Ponderado por Volumen)
-        
-        Calcula el VWAP para un DataFrame OHLCV. El VWAP es una medida del precio 
-        promedio ponderado por el volumen, útil para identificar niveles de soporte 
-        y resistencia dinámicos.
-
-        Parámetros:
-        -----------
-        df : DataFrame
-            DataFrame con columnas OHLCV: 'high', 'low', 'close', 'volume'
-
-        Retorna:
-        --------
-        Series: VWAP acumulado para cada punto de datos
-
-        Fórmula:
-        --------
-        VWAP = Σ(Precio Típico × Volumen) / Σ(Volumen)
-        donde Precio Típico = (High + Low + Close) / 3
-
-        Ejemplo:
-        --------
-        >>> vwap_series = smc.vwap(df)
+        Calcula el VWAP (Volume Weighted Average Price) para un DataFrame OHLCV.
+        Requiere columnas: 'high', 'low', 'close', 'volume'.
+        Devuelve una Serie con el VWAP acumulado.
         """
         precio_tipico = (df['high'] + df['low'] + df['close']) / 3
         vwap = (precio_tipico * df['volume']).cumsum() / df['volume'].cumsum()
