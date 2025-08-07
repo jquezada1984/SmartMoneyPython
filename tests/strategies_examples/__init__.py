@@ -1,0 +1,1 @@
+# Ejemplos de estrategias de trading 
