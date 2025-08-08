@@ -20,9 +20,9 @@ from smartmoneyconcepts.smc import smc
 import sys
 import os
 # Agregar el directorio de la estrategia al path
-strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "estrategia", "Momentum")
+strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "estrategia")
 sys.path.insert(0, strategy_path)
-from momentum_smc_strategy_lib import MomentumSMCStrategyLib
+from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
 
 class TradingSignalVisualizer:
     """
@@ -228,7 +228,7 @@ def add_trend_indicator(fig, df, trend_data, window_df):
     Agregar indicador de tendencia con múltiples opciones de visualización
     """
     # Obtener el valor de tendencia actual
-    current_trend = trend_data['Trend'].iloc[-1]
+    current_trend = trend_data['trend'].iloc[-1]
     
     if pd.isna(current_trend):
         return fig
@@ -919,7 +919,7 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     
     # 4. GRÁFICO TENDENCIA - Línea continua como RSI
     # Obtener todos los valores de tendencia para la ventana actual
-    trend_values = trend_data['Trend'].iloc[-len(window_df):]
+    trend_values = trend_data['trend'].iloc[-len(window_df):]
     
     # Crear línea de tendencia continua
     fig.add_trace(

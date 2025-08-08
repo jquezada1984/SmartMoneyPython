@@ -83,7 +83,13 @@ PATTERNS_CONFIG = {
     "hammer_body_ratio": 0.3,
     "hammer_shadow_ratio": 2.0,
     "doji_threshold": 0.05,
-    "morning_star_body_threshold": 0.3
+    "morning_star_body_threshold": 0.3,
+    "volume_confirmation": {
+        "enabled": True,
+        "vol_window": 20,  # Ventana para calcular media de volumen
+        "vol_mult": 1.2,   # Multiplicador para confirmación (1.2 = 20% más que la media)
+        "spike_threshold": 2.0  # Umbral para picos de volumen (2.0 = 200% de la media)
+    }
 }
 
 # Configuración de señales
@@ -164,12 +170,33 @@ BACKTEST_CONFIG = {
 USAGE_EXAMPLES = {
     "basic_analysis": """
 # Análisis básico
-from smartmoneyconcepts.mt5_connector import MT5Connector
+from connectors.mt5_connector import MT5Connector
 
 mt5 = MT5Connector()
 df = mt5.get_data("EURUSD", "1h", 500)
 smc_analysis = mt5.analyze_smc(df)
 signals = mt5.generate_signals(df, smc_analysis, {})
+    """,
+    
+    "volume_confirmation": """
+# Análisis con confirmación por volumen
+from smartmoneyconcepts.candlestick_patterns import CandlestickPatterns
+
+patterns = CandlestickPatterns()
+
+# Detectar patrones
+hammer = patterns.hammer(df)
+engulfing = patterns.engulfing(df)
+
+# Confirmación por volumen
+volume_conf = patterns.volume_confirmation(df, vol_window=20, vol_mult=1.2)
+volume_ratio = patterns.high_volume_relative(df, vol_window=20, vol_mult=1.2)
+
+# Señal de compra con confirmación
+if hammer.iloc[-1] and volume_conf.iloc[-1]:
+    print("🟢 Señal de compra confirmada por volumen")
+elif hammer.iloc[-1] and not volume_conf.iloc[-1]:
+    print("🟡 Señal de compra débil (sin confirmación de volumen)")
     """,
     
     "trading_system": """

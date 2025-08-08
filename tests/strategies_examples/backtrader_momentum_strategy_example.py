@@ -6,9 +6,9 @@ import os
 import collections
 
 # Agregar el directorio de la librería al path
-strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "estrategia", "Momentum")
+strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "estrategia")
 sys.path.insert(0, strategy_path)
-from momentum_smc_strategy_lib import MomentumSMCStrategyLib
+from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
 
 class MomentumSMCStrategyExample(bt.Strategy):
     """

@@ -18,7 +18,7 @@ pip install MetaTrader5 pandas numpy
 
 ### Conexión básica
 ```python
-from smartmoneyconcepts.mt5_connector import MT5Connector
+from connectors.mt5_connector import MT5Connector
 
 # Conectar a MT5 (sin credenciales - usa MT5 local)
 mt5 = MT5Connector()

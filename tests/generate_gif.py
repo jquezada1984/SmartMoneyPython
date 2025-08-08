@@ -451,8 +451,8 @@ if df is None:
 def fig_to_buffer(fig):
     try:
         fig_bytes = fig.to_image(format="png", width=500, height=300)
-    fig_buffer = BytesIO(fig_bytes)
-    fig_image = Image.open(fig_buffer)
+        fig_buffer = BytesIO(fig_bytes)
+        fig_image = Image.open(fig_buffer)
         return fig_image  # Retornar la imagen PIL directamente
     except Exception as e:
         print(f"⚠️ Error al generar frame: {e}")

@@ -128,4 +128,122 @@ class CandlestickPatterns:
             (prev_body / total.shift(1) < body_threshold) &
             (c < o)
         )
-        return is_evening 
+        return is_evening
+
+    # ===== CONFIRMACIÓN POR VOLUMEN =====
+    
+    @staticmethod
+    def volume_confirmation(ohlc: pd.DataFrame, vol_window: int = 20, vol_mult: float = 1.2) -> pd.Series:
+        """
+        Confirma señales por volumen. Verifica si el volumen actual es mayor que la media
+        de las últimas N velas multiplicada por un factor.
+        
+        Parámetros:
+        ohlc: pd.DataFrame - DataFrame con columnas OHLCV
+        vol_window: int - Ventana para calcular la media de volumen (default: 20)
+        vol_mult: float - Multiplicador para la media de volumen (default: 1.2)
+        
+        Retorna:
+        pd.Series - True si el volumen actual es mayor que la media * multiplicador
+        """
+        if 'volume' not in ohlc.columns:
+            # Si no hay columna volume, crear una con valores NaN
+            volume = pd.Series(np.nan, index=ohlc.index)
+        else:
+            volume = ohlc['volume']
+        
+        # Calcular media móvil del volumen
+        vol_ma = volume.rolling(window=vol_window, min_periods=1).mean()
+        
+        # Umbral de confirmación
+        threshold = vol_ma * vol_mult
+        
+        # Confirmación por volumen
+        confirmation = volume > threshold
+        
+        return confirmation
+    
+    @staticmethod
+    def high_volume_relative(ohlc: pd.DataFrame, vol_window: int = 20, vol_mult: float = 1.2) -> pd.Series:
+        """
+        Versión alternativa que calcula el volumen relativo (volumen actual / media).
+        
+        Parámetros:
+        ohlc: pd.DataFrame - DataFrame con columnas OHLCV
+        vol_window: int - Ventana para calcular la media de volumen
+        vol_mult: float - Multiplicador mínimo para considerar alto volumen
+        
+        Retorna:
+        pd.Series - Ratio volumen actual / media de volumen
+        """
+        if 'volume' not in ohlc.columns:
+            return pd.Series(1.0, index=ohlc.index)  # Sin datos de volumen
+        
+        volume = ohlc['volume']
+        vol_ma = volume.rolling(window=vol_window, min_periods=1).mean()
+        
+        # Evitar división por cero
+        vol_ma = vol_ma.replace(0, np.nan)
+        volume_ratio = volume / vol_ma
+        
+        return volume_ratio
+    
+    @staticmethod
+    def volume_spike(ohlc: pd.DataFrame, vol_window: int = 20, spike_threshold: float = 2.0) -> pd.Series:
+        """
+        Detecta picos de volumen (spikes) que pueden indicar movimientos importantes.
+        
+        Parámetros:
+        ohlc: pd.DataFrame - DataFrame con columnas OHLCV
+        vol_window: int - Ventana para calcular la media de volumen
+        spike_threshold: float - Umbral para considerar un pico (default: 2.0 = 200% de la media)
+        
+        Retorna:
+        pd.Series - True si hay un pico de volumen
+        """
+        if 'volume' not in ohlc.columns:
+            return pd.Series(False, index=ohlc.index)
+        
+        volume = ohlc['volume']
+        vol_ma = volume.rolling(window=vol_window, min_periods=1).mean()
+        
+        # Detectar picos
+        spike = volume > (vol_ma * spike_threshold)
+        
+        return spike
+    
+    @staticmethod
+    def volume_trend_confirmation(ohlc: pd.DataFrame, vol_window: int = 20) -> pd.Series:
+        """
+        Confirma la tendencia del precio con el volumen.
+        - Volumen alto en dirección de la tendencia = confirmación
+        - Volumen bajo en dirección de la tendencia = divergencia
+        
+        Parámetros:
+        ohlc: pd.DataFrame - DataFrame con columnas OHLCV
+        vol_window: int - Ventana para calcular la media de volumen
+        
+        Retorna:
+        pd.Series - 1 = confirmación alcista, -1 = confirmación bajista, 0 = neutral
+        """
+        if 'volume' not in ohlc.columns:
+            return pd.Series(0, index=ohlc.index)
+        
+        volume = ohlc['volume']
+        close = ohlc['close']
+        
+        # Calcular cambios de precio
+        price_change = close.diff()
+        
+        # Calcular media de volumen
+        vol_ma = volume.rolling(window=vol_window, min_periods=1).mean()
+        
+        # Determinar confirmación
+        bullish_conf = (price_change > 0) & (volume > vol_ma)
+        bearish_conf = (price_change < 0) & (volume > vol_ma)
+        
+        confirmation = pd.Series(0, index=ohlc.index)
+        confirmation[bullish_conf] = 1
+        confirmation[bearish_conf] = -1
+        
+        return confirmation 
