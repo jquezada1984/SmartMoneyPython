@@ -741,13 +741,13 @@ def import_data():
     df.index = pd.to_datetime(df.index)
     df.index = df.index.strftime("%Y-%m-%d %H:%M:%S")    
     # Tomar las últimas 500 filas (igual que en Binance)
-    df = df.iloc[-120:]
+    df = df.iloc[-500:]
     
     return df
 
 
 df = import_data()
-df = df.iloc[-500:]
+
 
 # Inicializar visualizador de señales de trading
 signal_visualizer = TradingSignalVisualizer()
@@ -761,8 +761,8 @@ if os.path.exists(frames_dir):
     shutil.rmtree(frames_dir)
 os.makedirs(frames_dir)
 
-window = 100
-print(f"🎬 Generando {len(df) - window} frames PNG con MACD, RSI, TENDENCIA y SEÑALES DE TRADING...")
+window = 300
+print(f"🎬 Generando {len(df) - window} frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING...")
 
 for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     window_df = df.iloc[pos - window : pos]
@@ -776,13 +776,13 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     histogram = cached_indicators['histogram'].iloc[pos - window:pos]
     rsi = cached_indicators['rsi'].iloc[pos - window:pos]
     
-    # Crear subplots: Candlesticks (60%), MACD (15%), RSI (15%), Tendencia (10%)
+    # Crear subplots: Candlesticks (55%), MACD (12%), RSI (12%), Tendencia 15M (7%), Tendencia 1H (7%), Tendencia 4H (7%)
     fig = sp.make_subplots(
-        rows=4, cols=1,
+        rows=6, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.12,  # Aumentar más el espaciado vertical entre subplots
-        row_heights=[0.60, 0.15, 0.15, 0.10],  # Reducir candlesticks y aumentar tendencia
-        subplot_titles=('', 'MACD', 'RSI', 'TENDENCIA')
+        vertical_spacing=0.10,  # Ajustar espaciado para 6 subplots
+        row_heights=[0.55, 0.12, 0.12, 0.07, 0.07, 0.07],  # Distribuir altura entre los 6 paneles
+        subplot_titles=('', 'MACD', 'RSI', 'TENDENCIA 15M', 'TENDENCIA 1H', 'TENDENCIA 4H')
     )
     
     # 1. GRÁFICO PRINCIPAL - CANDLESTICKS
@@ -893,7 +893,7 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
         paper_bgcolor="rgba(12, 14, 18, 1)",
         font=dict(color="white"),
         width=800,
-        height=700
+        height=900  # Aumentar altura para acomodar 6 subplots
     )
     
     # Configurar ejes
@@ -933,31 +933,165 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     
-    # 4. GRÁFICO TENDENCIA - Línea continua como RSI
-    # Obtener todos los valores de tendencia para la ventana actual
-    trend_values = trend_data['trend'].iloc[-len(window_df):]
+    # 4. GRÁFICO TENDENCIA 15M - Línea continua
+    # Obtener valores de tendencia para 15M
+    trend_values_15m = trend_data['trend'].iloc[-len(window_df):]
     
-    # Crear línea de tendencia continua
+    # Crear línea de tendencia 15M
     fig.add_trace(
         go.Scatter(
             x=window_df.index,
-            y=trend_values,
+            y=trend_values_15m,
             mode='lines',
-            name='Tendencia',
+            name='Tendencia 15M',
             line=dict(color='cyan', width=2),
             showlegend=False
         ),
         row=4, col=1
     )
     
-    # Líneas de referencia para tendencia
+    # Líneas de referencia para tendencia 15M
     fig.add_hline(y=2, line_dash="dash", line_color="lime", row=4, col=1)  # Alcista fuerte
     fig.add_hline(y=1, line_dash="dash", line_color="lightgreen", row=4, col=1)  # Alcista
     fig.add_hline(y=0, line_dash="solid", line_color="gray", row=4, col=1)  # Lateral
     fig.add_hline(y=-1, line_dash="dash", line_color="lightcoral", row=4, col=1)  # Bajista
     fig.add_hline(y=-2, line_dash="dash", line_color="red", row=4, col=1)  # Bajista fuerte
     
-    # Configurar ejes Tendencia
+    # 5. GRÁFICO TENDENCIA 1H - Línea continua
+    # Obtener valores de tendencia para 1H (resamplear desde 5M)
+    try:
+        # Crear una copia del DataFrame con índice datetime
+        df_temp = window_df.copy()
+        df_temp.index = pd.to_datetime(df_temp.index)
+        
+        df_1h = df_temp.resample('1h').agg({
+            'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+        }).dropna()
+        # Asegurar que el índice sea datetime
+        df_1h.index = pd.to_datetime(df_1h.index)
+        print(f"DEBUG 1H: Datos resampleados 1H: {len(df_1h)} filas")
+        if len(df_1h) > 0:
+            # Calcular tendencia 1H usando la misma lógica
+            trend_1h = signal_visualizer.strategy_lib.market_analysis.detect_trend(df_1h, method='combined')
+            trend_values_1h = trend_1h['trend'].iloc[-len(df_1h):]
+            
+            # Crear línea de tendencia 1H
+            # Usar el índice de window_df para mantener consistencia en el eje X
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=trend_values_1h,  # Usar los valores de tendencia 1H pero con el índice de 5M
+                    mode='lines',
+                    name='Tendencia 1H',
+                    line=dict(color='yellow', width=2),
+                    showlegend=False
+                ),
+                row=5, col=1
+            )
+        else:
+            # Si no hay datos 1H, crear línea horizontal en cero
+            print(f"DEBUG 1H: No hay datos suficientes, dibujando línea en cero")
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=[0] * len(window_df),
+                    mode='lines',
+                    name='Tendencia 1H',
+                    line=dict(color='yellow', width=2, dash='dash'),
+                    showlegend=False
+                ),
+                row=5, col=1
+            )
+        
+        # Líneas de referencia para tendencia 1H
+        fig.add_hline(y=2, line_dash="dash", line_color="lime", row=5, col=1)
+        fig.add_hline(y=1, line_dash="dash", line_color="lightgreen", row=5, col=1)
+        fig.add_hline(y=0, line_dash="solid", line_color="gray", row=5, col=1)
+        fig.add_hline(y=-1, line_dash="dash", line_color="lightcoral", row=5, col=1)
+        fig.add_hline(y=-2, line_dash="dash", line_color="red", row=5, col=1)
+    except Exception as e:
+        print(f"Error calculando tendencia 1H: {e}")
+        # En caso de error, crear línea horizontal en cero
+        fig.add_trace(
+            go.Scatter(
+                x=window_df.index,
+                y=[0] * len(window_df),
+                mode='lines',
+                name='Tendencia 1H',
+                line=dict(color='yellow', width=2, dash='dash'),
+                showlegend=False
+            ),
+            row=5, col=1
+        )
+    
+    # 6. GRÁFICO TENDENCIA 4H - Línea continua
+    # Obtener valores de tendencia para 4H (resamplear desde 5M)
+    try:
+        # Crear una copia del DataFrame con índice datetime
+        df_temp = window_df.copy()
+        df_temp.index = pd.to_datetime(df_temp.index)
+        
+        df_4h = df_temp.resample('4h').agg({
+            'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+        }).dropna()
+        # Asegurar que el índice sea datetime
+        df_4h.index = pd.to_datetime(df_4h.index)
+        print(f"DEBUG 4H: Datos resampleados 4H: {len(df_4h)} filas")
+        if len(df_4h) > 0:
+            # Calcular tendencia 4H usando la misma lógica
+            trend_4h = signal_visualizer.strategy_lib.market_analysis.detect_trend(df_4h, method='combined')
+            trend_values_4h = trend_4h['trend'].iloc[-len(df_4h):]
+            
+            # Crear línea de tendencia 4H
+            # Usar el índice de window_df para mantener consistencia en el eje X
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=trend_values_4h,  # Usar los valores de tendencia 4H pero con el índice de 5M
+                    mode='lines',
+                    name='Tendencia 4H',
+                    line=dict(color='magenta', width=2),
+                    showlegend=False
+                ),
+                row=6, col=1
+            )
+        else:
+            # Si no hay datos 4H, crear línea horizontal en cero
+            print(f"DEBUG 4H: No hay datos suficientes, dibujando línea en cero")
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=[0] * len(window_df),
+                    mode='lines',
+                    name='Tendencia 4H',
+                    line=dict(color='magenta', width=2, dash='dash'),
+                    showlegend=False
+                ),
+                row=6, col=1
+            )
+        
+        # Líneas de referencia para tendencia 4H
+        fig.add_hline(y=2, line_dash="dash", line_color="lime", row=6, col=1)
+        fig.add_hline(y=1, line_dash="dash", line_color="lightgreen", row=6, col=1)
+        fig.add_hline(y=0, line_dash="solid", line_color="gray", row=6, col=1)
+        fig.add_hline(y=-1, line_dash="dash", line_color="lightcoral", row=6, col=1)
+        fig.add_hline(y=-2, line_dash="dash", line_color="red", row=6, col=1)
+    except Exception as e:
+        print(f"Error calculando tendencia 4H: {e}")
+        # En caso de error, crear línea horizontal en cero
+        fig.add_trace(
+            go.Scatter(
+                x=window_df.index,
+                y=[0] * len(window_df),
+                mode='lines',
+                name='Tendencia 4H',
+                line=dict(color='magenta', width=2, dash='dash'),
+                showlegend=False
+            ),
+            row=6, col=1
+        )
+    
+    # Configurar ejes Tendencia 15M
     fig.update_xaxes(
         title_text="", 
         row=4, col=1,
@@ -967,16 +1101,40 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
         tickmode='auto',
         nticks=6
     )
-    fig.update_yaxes(title_text="TENDENCIA", range=[-2.5, 2.5], row=4, col=1)
+    fig.update_yaxes(title_text="TENDENCIA 15M", range=[-2.5, 2.5], row=4, col=1)
+    
+    # Configurar ejes Tendencia 1H
+    fig.update_xaxes(
+        title_text="", 
+        row=5, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
+    fig.update_yaxes(title_text="TENDENCIA 1H", range=[-2.5, 2.5], row=5, col=1)
+    
+    # Configurar ejes Tendencia 4H
+    fig.update_xaxes(
+        title_text="", 
+        row=6, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
+    fig.update_yaxes(title_text="TENDENCIA 4H", range=[-2.5, 2.5], row=6, col=1)
     
     # Guardar frame como PNG
     try:
         frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
-        fig.write_image(frame_filename, width=800, height=700)
+        fig.write_image(frame_filename, width=800, height=900)  # Ajustar altura para 6 subplots
     except Exception as e:
         print(f"[WARNING] Frame en posición {pos} falló: {e}")
 
-print(f"✅ Frames PNG con MACD, RSI, TENDENCIA y SEÑALES DE TRADING guardados en: {frames_dir}/")
+print(f"✅ Frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING guardados en: {frames_dir}/")
 print(f"📊 Total de frames generados: {len(df) - window}")
 print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
 
