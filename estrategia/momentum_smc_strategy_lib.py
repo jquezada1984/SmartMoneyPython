@@ -35,6 +35,12 @@ class MomentumSMCStrategyLib:
         )
         
         # Parámetros específicos de la estrategia
+        self.swing_length = swing_length
+        self.lookback = lookback
+        self.macd_fast = macd_fast
+        self.macd_slow = macd_slow
+        self.macd_signal = macd_signal
+        self.rsi_period = rsi_period
         self.ob_lookback = ob_lookback
         self.fib_min = fib_min
         self.fib_max = fib_max
@@ -89,14 +95,14 @@ class MomentumSMCStrategyLib:
                     # Retroceso entre 61.8% y 78.6% (sin MACD/RSI)
                     if self.fib_min <= retracement <= self.fib_max:
                         confidence = self._calculate_confidence_2(window_df, i, retracement)
-                                signals.append({
-                                    'type': 'BUY',
-                                    'strategy': 'Order Block + Fibonacci',
-                                    'index': i,
-                                    'price': current_price,
-                                    'timestamp': df.index[i],
+                        signals.append({
+                            'type': 'BUY',
+                            'strategy': 'Order Block + Fibonacci',
+                            'index': i,
+                            'price': current_price,
+                            'timestamp': df.index[i],
                             'confidence': confidence
-                                })
+                        })
             
             # Verificar Order Block bajista (SELL)
             elif not np.isnan(ob_data['OB'].iloc[i]) and ob_data['OB'].iloc[i] == -1:
@@ -110,14 +116,14 @@ class MomentumSMCStrategyLib:
                     # Retroceso entre 61.8% y 78.6% (sin MACD/RSI)
                     if self.fib_min <= retracement <= self.fib_max:
                         confidence = self._calculate_confidence_2(window_df, i, retracement)
-                                signals.append({
-                                    'type': 'SELL',
-                                    'strategy': 'Order Block + Fibonacci',
-                                    'index': i,
-                                    'price': current_price,
-                                    'timestamp': df.index[i],
+                        signals.append({
+                            'type': 'SELL',
+                            'strategy': 'Order Block + Fibonacci',
+                            'index': i,
+                            'price': current_price,
+                            'timestamp': df.index[i],
                             'confidence': confidence
-                                })
+                        })
         
         return signals
     
@@ -140,14 +146,14 @@ class MomentumSMCStrategyLib:
                 
                 if fvg_bottom < current_price < fvg_top:
                     confidence = self._calculate_confidence_3(window_df, i, fvg_top, fvg_bottom)
-                            signals.append({
-                                'type': 'BUY',
-                                'strategy': 'Fair Value Gap',
-                                'index': i,
-                                'price': current_price,
-                                'timestamp': df.index[i],
+                    signals.append({
+                        'type': 'BUY',
+                        'strategy': 'Fair Value Gap',
+                        'index': i,
+                        'price': current_price,
+                        'timestamp': df.index[i],
                         'confidence': confidence
-                            })
+                    })
             
             # Verificar FVG bajista (SELL)
             elif not np.isnan(fvg_data['FVG'].iloc[i]) and fvg_data['FVG'].iloc[i] == -1:
@@ -156,14 +162,14 @@ class MomentumSMCStrategyLib:
                 
                 if fvg_bottom < current_price < fvg_top:
                     confidence = self._calculate_confidence_3(window_df, i, fvg_top, fvg_bottom)
-                            signals.append({
-                                'type': 'SELL',
-                                'strategy': 'Fair Value Gap',
-                                'index': i,
-                                'price': current_price,
-                                'timestamp': df.index[i],
+                    signals.append({
+                        'type': 'SELL',
+                        'strategy': 'Fair Value Gap',
+                        'index': i,
+                        'price': current_price,
+                        'timestamp': df.index[i],
                         'confidence': confidence
-                            })
+                    })
         
         return signals
     
@@ -193,17 +199,17 @@ class MomentumSMCStrategyLib:
         # Intentar resamplear desde 5M si faltan
         if df_h4_use is None:
             try:
-                df_h4_use = self._resample_ohlcv(df, '4H')
+                df_h4_use = self._resample_ohlcv(df, '4h')
             except Exception:
                 df_h4_use = None
         if df_h1_use is None:
             try:
-                df_h1_use = self._resample_ohlcv(df, '1H')
+                df_h1_use = self._resample_ohlcv(df, '1h')
             except Exception:
                 df_h1_use = None
         if df_m15_use is None:
             try:
-                df_m15_use = self._resample_ohlcv(df, '15T')
+                df_m15_use = self._resample_ohlcv(df, '15min')
             except Exception:
                 df_m15_use = None
 
@@ -243,9 +249,9 @@ class MomentumSMCStrategyLib:
                                     'index': i,
                                     'price': current_candle['close'],
                                     'timestamp': df.index[i],
-                                'confidence': min(100, 70 + trend_bonus),  # Confianza base sin MACD/RSI
-                                'entry_type': 'bos_impulse',
-                                'trend_validation': trend_validation
+                                    'confidence': min(100, 70 + trend_bonus),  # Confianza base sin MACD/RSI
+                                    'entry_type': 'bos_impulse',
+                                    'trend_validation': trend_validation
                                 })
                     
                     # Señal de VENTA
@@ -272,15 +278,15 @@ class MomentumSMCStrategyLib:
                                     'index': i,
                                     'price': current_candle['close'],
                                     'timestamp': df.index[i],
-                                'confidence': min(100, 70 + trend_bonus),  # Confianza base sin MACD/RSI
-                                'entry_type': 'bos_impulse',
-                                'trend_validation': trend_validation
+                                    'confidence': min(100, 70 + trend_bonus),  # Confianza base sin MACD/RSI
+                                    'entry_type': 'bos_impulse',
+                                    'trend_validation': trend_validation
                                 })
         return signals
 
     def _resample_ohlcv(self, df: pd.DataFrame, rule: str) -> pd.DataFrame:
         """
-        Resamplear un DataFrame OHLCV a un timeframe superior (p.ej., '15T', '1H', '4H').
+        Resamplear un DataFrame OHLCV a un timeframe superior (p.ej., '15min', '1h', '4h').
         """
         if df is None or len(df) == 0:
             return df
@@ -463,35 +469,38 @@ class MomentumSMCStrategyLib:
                     # Verificar retroceso entre 61.8% y 78.6%
                     if self.fib_min <= retracement <= self.fib_max:
                         # Confirmar en timeframe superior si está disponible (sin MACD/RSI)
-                                    confirmacion_1h = True
-                                    if df_1h is not None:
-                                        # Encontrar el índice correspondiente en 1h
-                                        timestamp = df.index[i]
-                                        idx_1h = df_1h.index.get_loc(timestamp, method='ffill')
+                        confirmacion_1h = True
+                        if df_1h is not None:
+                            # Encontrar el índice correspondiente en 1h
+                            timestamp = df.index[i]
+                            idx_1h = df_1h.index.get_loc(timestamp, method='ffill')
                             # Verificar que no hay OB contrario reciente en 1h
-                            ob_1h = smc.ob(df_1h.iloc[:idx_1h+1], smc.swing_highs_lows(df_1h.iloc[:idx_1h+1], swing_length=self.swing_length))
-                                        if not np.isnan(ob_1h['OB'].iloc[-1]) and ob_1h['OB'].iloc[-1] == -1:
-                                            confirmacion_1h = False
-                                    
-                                    if confirmacion_1h:
-                                        confidence = self._calculate_confidence_2(
+                            ob_1h = smc.ob(
+                                df_1h.iloc[:idx_1h+1],
+                                smc.swing_highs_lows(df_1h.iloc[:idx_1h+1], swing_length=self.swing_length)
+                            )
+                            if not np.isnan(ob_1h['OB'].iloc[-1]) and ob_1h['OB'].iloc[-1] == -1:
+                                confirmacion_1h = False
+                        
+                        if confirmacion_1h:
+                            confidence = self._calculate_confidence_2(
                                 window_df, i, retracement, confirmacion_1h=confirmacion_1h
-                                        )
-                                        signals.append({
-                                            'type': 'BUY',
-                                            'strategy': 'Order Block + Fibonacci',
-                                            'index': i,
-                                            'price': current_price,
-                                            'timestamp': df.index[i],
-                                            'confidence': confidence,
-                                            'ob_info': {
-                                                'top': ob_top,
-                                                'bottom': ob_bottom,
-                                                'volume': ob_volume,
-                                                'retracement': retracement,
-                                                'confirmacion_1h': confirmacion_1h
-                                            }
-                                        })
+                            )
+                            signals.append({
+                                'type': 'BUY',
+                                'strategy': 'Order Block + Fibonacci',
+                                'index': i,
+                                'price': current_price,
+                                'timestamp': df.index[i],
+                                'confidence': confidence,
+                                'ob_info': {
+                                    'top': ob_top,
+                                    'bottom': ob_bottom,
+                                    'volume': ob_volume,
+                                    'retracement': retracement,
+                                    'confirmacion_1h': confirmacion_1h
+                                }
+                            })
             
             # Verificar Order Block bajista (SELL) - Lógica similar pero invertida
             elif not np.isnan(ob_data['OB'].iloc[i]) and ob_data['OB'].iloc[i] == -1:
@@ -514,32 +523,35 @@ class MomentumSMCStrategyLib:
                     retracement = (current_price - recent_low) / (recent_high - recent_low)
                     
                     if self.fib_min <= retracement <= self.fib_max:
-                                    confirmacion_1h = True
-                                    if df_1h is not None:
-                                        timestamp = df.index[i]
-                                        idx_1h = df_1h.index.get_loc(timestamp, method='ffill')
-                            ob_1h = smc.ob(df_1h.iloc[:idx_1h+1], smc.swing_highs_lows(df_1h.iloc[:idx_1h+1], swing_length=self.swing_length))
-                                        if not np.isnan(ob_1h['OB'].iloc[-1]) and ob_1h['OB'].iloc[-1] == 1:
-                                            confirmacion_1h = False
-                                    if confirmacion_1h:
-                                        confidence = self._calculate_confidence_2(
+                        confirmacion_1h = True
+                        if df_1h is not None:
+                            timestamp = df.index[i]
+                            idx_1h = df_1h.index.get_loc(timestamp, method='ffill')
+                            ob_1h = smc.ob(
+                                df_1h.iloc[:idx_1h+1],
+                                smc.swing_highs_lows(df_1h.iloc[:idx_1h+1], swing_length=self.swing_length)
+                            )
+                            if not np.isnan(ob_1h['OB'].iloc[-1]) and ob_1h['OB'].iloc[-1] == 1:
+                                confirmacion_1h = False
+                        if confirmacion_1h:
+                            confidence = self._calculate_confidence_2(
                                 window_df, i, retracement, confirmacion_1h=confirmacion_1h
-                                        )
-                                        signals.append({
-                                            'type': 'SELL',
-                                            'strategy': 'Order Block + Fibonacci',
-                                            'index': i,
-                                            'price': current_price,
-                                            'timestamp': df.index[i],
-                                            'confidence': confidence,
-                                            'ob_info': {
-                                                'top': ob_top,
-                                                'bottom': ob_bottom,
-                                                'volume': ob_volume,
-                                                'retracement': retracement,
-                                                'confirmacion_1h': confirmacion_1h
-                                            }
-                                        })
+                            )
+                            signals.append({
+                                'type': 'SELL',
+                                'strategy': 'Order Block + Fibonacci',
+                                'index': i,
+                                'price': current_price,
+                                'timestamp': df.index[i],
+                                'confidence': confidence,
+                                'ob_info': {
+                                    'top': ob_top,
+                                    'bottom': ob_bottom,
+                                    'volume': ob_volume,
+                                    'retracement': retracement,
+                                    'confirmacion_1h': confirmacion_1h
+                                }
+                            })
         return signals
 
     def analyze_strategy_3_fair_value_gap_with_indicators(self, df, indicators):
@@ -558,14 +570,14 @@ class MomentumSMCStrategyLib:
                 
                 if fvg_bottom < current_price < fvg_top:
                     confidence = self._calculate_confidence_3(window_df, i, fvg_top, fvg_bottom)
-                            signals.append({
-                                'type': 'BUY',
-                                'strategy': 'Fair Value Gap',
-                                'index': i,
-                                'price': current_price,
-                                'timestamp': df.index[i],
+                    signals.append({
+                        'type': 'BUY',
+                        'strategy': 'Fair Value Gap',
+                        'index': i,
+                        'price': current_price,
+                        'timestamp': df.index[i],
                         'confidence': confidence
-                            })
+                    })
             
             # Verificar FVG bajista (SELL)
             elif not np.isnan(fvg_data['FVG'].iloc[i]) and fvg_data['FVG'].iloc[i] == -1:
@@ -574,14 +586,14 @@ class MomentumSMCStrategyLib:
                 
                 if fvg_bottom < current_price < fvg_top:
                     confidence = self._calculate_confidence_3(window_df, i, fvg_top, fvg_bottom)
-                            signals.append({
-                                'type': 'SELL',
-                                'strategy': 'Fair Value Gap',
-                                'index': i,
-                                'price': current_price,
-                                'timestamp': df.index[i],
+                    signals.append({
+                        'type': 'SELL',
+                        'strategy': 'Fair Value Gap',
+                        'index': i,
+                        'price': current_price,
+                        'timestamp': df.index[i],
                         'confidence': confidence
-                            })
+                    })
         return signals
 
     def analyze_all_strategies(self, df, df_h4=None, df_h1=None, df_m15=None):
@@ -604,17 +616,17 @@ class MomentumSMCStrategyLib:
 
         if df_h4_use is None:
             try:
-                df_h4_use = self._resample_ohlcv(df, '4H')
+                df_h4_use = self._resample_ohlcv(df, '4h')
             except Exception:
                 df_h4_use = None
         if df_h1_use is None:
             try:
-                df_h1_use = self._resample_ohlcv(df, '1H')
+                df_h1_use = self._resample_ohlcv(df, '1h')
             except Exception:
                 df_h1_use = None
         if df_m15_use is None:
             try:
-                df_m15_use = self._resample_ohlcv(df, '15T')
+                df_m15_use = self._resample_ohlcv(df, '15min')
             except Exception:
                 df_m15_use = None
         

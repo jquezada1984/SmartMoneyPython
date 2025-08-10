@@ -11,17 +11,8 @@ from PIL import Image
 import plotly.io as pio
 from tqdm import tqdm
 
-
-
-sys.path.append(os.path.abspath("../"))
+# Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
 from smartmoneyconcepts.smc import smc
-
-# Importar la estrategia
-import sys
-import os
-# Agregar el directorio de la estrategia al path
-strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "estrategia")
-sys.path.insert(0, strategy_path)
 from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
 
 class TradingSignalVisualizer:
@@ -785,12 +776,12 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     histogram = cached_indicators['histogram'].iloc[pos - window:pos]
     rsi = cached_indicators['rsi'].iloc[pos - window:pos]
     
-    # Crear subplots: Candlesticks (65%), MACD (15%), RSI (15%), Tendencia (5%)
+    # Crear subplots: Candlesticks (60%), MACD (15%), RSI (15%), Tendencia (10%)
     fig = sp.make_subplots(
         rows=4, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.65, 0.15, 0.15, 0.05],
+        vertical_spacing=0.12,  # Aumentar más el espaciado vertical entre subplots
+        row_heights=[0.60, 0.15, 0.15, 0.10],  # Reducir candlesticks y aumentar tendencia
         subplot_titles=('', 'MACD', 'RSI', 'TENDENCIA')
     )
     
@@ -897,7 +888,7 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     fig.update_layout(
         xaxis_rangeslider_visible=False,
         showlegend=False,
-        margin=dict(l=0, r=0, b=0, t=0),
+        margin=dict(l=0, r=0, b=50, t=0),  # Aumentar margen inferior para etiquetas del eje X
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(12, 14, 18, 1)",
         font=dict(color="white"),
@@ -906,15 +897,40 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     )
     
     # Configurar ejes
-    fig.update_xaxes(visible=False, showticklabels=False, row=1, col=1)
+    fig.update_xaxes(
+        visible=True, 
+        showticklabels=True, 
+        row=1, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=10, color="white"),
+        tickmode='auto',
+        nticks=8
+    )
     fig.update_yaxes(visible=False, showticklabels=False, row=1, col=1)
     
     # Configurar ejes MACD
-    fig.update_xaxes(title_text="", row=2, col=1)
+    fig.update_xaxes(
+        title_text="", 
+        row=2, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
     fig.update_yaxes(title_text="MACD", row=2, col=1)
     
     # Configurar ejes RSI
-    fig.update_xaxes(title_text="", row=3, col=1)
+    fig.update_xaxes(
+        title_text="", 
+        row=3, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     
     # 4. GRÁFICO TENDENCIA - Línea continua como RSI
@@ -942,7 +958,15 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     fig.add_hline(y=-2, line_dash="dash", line_color="red", row=4, col=1)  # Bajista fuerte
     
     # Configurar ejes Tendencia
-    fig.update_xaxes(title_text="", row=4, col=1)
+    fig.update_xaxes(
+        title_text="", 
+        row=4, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
     fig.update_yaxes(title_text="TENDENCIA", range=[-2.5, 2.5], row=4, col=1)
     
     # Guardar frame como PNG

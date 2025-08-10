@@ -7,8 +7,8 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 warnings.filterwarnings('ignore')
 
-from .smc import smc
-from .candlestick_patterns import CandlestickPatterns
+from smartmoneyconcepts.smc import smc
+from smartmoneyconcepts.candlestick_patterns import CandlestickPatterns
 
 class MT5Connector:
     """

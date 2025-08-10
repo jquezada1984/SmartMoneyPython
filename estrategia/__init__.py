@@ -1,11 +1,6 @@
 """
-Estrategias de Trading - Smart Money Concepts
-
-Este paquete contiene las librerías de estrategias de trading basadas en Smart Money Concepts.
-Cada estrategia está diseñada para ser independiente y reutilizable.
+Paquete de estrategias de Trading - Smart Money Concepts
 """
 
-from .momentum_smc_strategy_lib import MomentumSMCStrategyLib
-from .zonas_mitigacion_strategy_lib import ZonasMitigacionStrategyLib
-
-__all__ = ['MomentumSMCStrategyLib', 'ZonasMitigacionStrategyLib']
+# Dejar el __init__ minimalista para evitar problemas de importación.
+# Las librerías se importan directamente desde sus módulos.
