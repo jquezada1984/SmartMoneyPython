@@ -23,7 +23,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from connectors.mt5_connector import MT5Connector
 
-def export_data_to_csv(symbol: str, timeframe: str, bars: int = 1000, 
+def export_data_to_csv(symbol: str, timeframe: str, bars: int = 10000, 
                        start_date: datetime = None, end_date: datetime = None,
                        output_dir: str = "tests/test_data") -> str:
     """

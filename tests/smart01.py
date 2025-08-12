@@ -214,6 +214,78 @@ def calculate_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+def calculate_hybrid_trend(df, timeframe_name):
+    """
+    Calcular tendencia híbrida combinando SMC con análisis de precios
+    """
+    try:
+        # 1. Intentar SMC primero
+        market_analysis = signal_visualizer.strategy_lib.market_analysis
+        smc_trend = market_analysis.detect_trend(df, method='structural')
+        
+        # 2. Análisis de precios para confirmar
+        if len(df) >= 20:  # Necesitamos suficientes datos
+            # Calcular medias móviles simples
+            ma_short = df['close'].rolling(window=10).mean()
+            ma_long = df['close'].rolling(window=20).mean()
+            
+            # Calcular cambio de precio en las últimas velas
+            recent_prices = df['close'].tail(5)
+            price_change = recent_prices.iloc[-1] - recent_prices.iloc[0]
+            price_change_pct = (price_change / recent_prices.iloc[0]) * 100
+            
+            # Determinar tendencia por precios
+            if ma_short.iloc[-1] > ma_long.iloc[-1] and price_change > 0:
+                price_trend = 1  # Alcista
+            elif ma_short.iloc[-1] < ma_long.iloc[-1] and price_change < 0:
+                price_trend = -1  # Bajista
+            else:
+                price_trend = 0  # Lateral
+            
+            # Combinar SMC con análisis de precios
+            smc_current = smc_trend['trend'].iloc[-1]
+            smc_strength = smc_trend['strength'].iloc[-1]
+            smc_confidence = smc_trend['confidence'].iloc[-1]
+            
+            # Si SMC no detecta tendencia (fuerza/confianza = 0), usar análisis de precios
+            if smc_strength == 0 and smc_confidence == 0:
+                final_trend = price_trend
+                final_strength = abs(price_change_pct) * 10  # Escalar el cambio de precio
+                final_confidence = 60 if abs(price_change_pct) > 0.05 else 40
+                
+                print(f"DEBUG {timeframe_name}: SMC no detectó tendencia, usando análisis de precios")
+                print(f"   Cambio de precio: {price_change:+.5f} ({price_change_pct:+.2f}%)")
+                print(f"   Tendencia por precios: {price_trend}")
+            else:
+                final_trend = smc_current
+                final_strength = smc_strength
+                final_confidence = smc_confidence
+                print(f"DEBUG {timeframe_name}: Usando tendencia SMC detectada")
+            
+            # Crear DataFrame de tendencia híbrida
+            hybrid_trend = pd.DataFrame({
+                'trend': [final_trend] * len(df),
+                'strength': [final_strength] * len(df),
+                'confidence': [final_confidence] * len(df)
+            }, index=df.index)
+            
+            return hybrid_trend
+            
+        else:
+            # Si no hay suficientes datos, usar SMC puro
+            print(f"DEBUG {timeframe_name}: Datos insuficientes, usando SMC puro")
+            return smc_trend
+            
+    except Exception as e:
+        print(f"Error calculando tendencia híbrida para {timeframe_name}: {e}")
+        # Retornar tendencia neutral en caso de error
+        neutral_trend = pd.DataFrame({
+            'trend': [0] * len(df),
+            'strength': [0] * len(df),
+            'confidence': [0] * len(df)
+        }, index=df.index)
+        return neutral_trend
+
 def add_trend_indicator(fig, df, trend_data, window_df):
     """
     Agregar indicador de tendencia con múltiples opciones de visualización
@@ -741,8 +813,7 @@ def import_data():
     df.index = pd.to_datetime(df.index)
     df.index = df.index.strftime("%Y-%m-%d %H:%M:%S")    
     # Tomar las últimas 500 filas (igual que en Binance)
-    df = df.iloc[-500:]
-    
+
     return df
 
 
@@ -761,10 +832,12 @@ if os.path.exists(frames_dir):
     shutil.rmtree(frames_dir)
 os.makedirs(frames_dir)
 
-window = 300
-print(f"🎬 Generando {len(df) - window} frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING...")
+window = 100
+print(f"🎬 Generando frames PNG desde vela 400 hasta {len(df)} con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING...")
 
-for pos in tqdm(range(window, len(df)), desc="Generando frames"):
+# Generar frames PNG comenzando desde la vela 400
+start_pos = 400
+for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
     window_df = df.iloc[pos - window : pos]
     
     # Obtener indicadores precalculados
@@ -934,21 +1007,62 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     
     # 4. GRÁFICO TENDENCIA 15M - Línea continua
-    # Obtener valores de tendencia para 15M
-    trend_values_15m = trend_data['trend'].iloc[-len(window_df):]
-    
-    # Crear línea de tendencia 15M
-    fig.add_trace(
-        go.Scatter(
-            x=window_df.index,
-            y=trend_values_15m,
-            mode='lines',
-            name='Tendencia 15M',
-            line=dict(color='cyan', width=2),
-            showlegend=False
-        ),
-        row=4, col=1
-    )
+    # Calcular tendencia híbrida para 15M
+    try:
+        # Crear DataFrame de 15M desde los datos de 5M
+        df_temp = window_df.copy()
+        df_temp.index = pd.to_datetime(df_temp.index)
+        
+        df_15m = df_temp.resample('15min').agg({
+            'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+        }).dropna()
+        
+        if len(df_15m) > 0:
+            # Usar función híbrida para calcular tendencia
+            trend_15m_hybrid = calculate_hybrid_trend(df_15m, '15M')
+            trend_values_15m = trend_15m_hybrid['trend'].iloc[-len(df_15m):]
+            
+            # Crear línea de tendencia 15M
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=trend_values_15m,
+                    mode='lines',
+                    name='Tendencia 15M (Híbrida)',
+                    line=dict(color='cyan', width=2),
+                    showlegend=False
+                ),
+                row=4, col=1
+            )
+        else:
+            # Si no hay datos 15M, usar tendencia base
+            trend_values_15m = trend_data['trend'].iloc[-len(window_df):]
+            fig.add_trace(
+                go.Scatter(
+                    x=window_df.index,
+                    y=trend_values_15m,
+                    mode='lines',
+                    name='Tendencia 15M (Base)',
+                    line=dict(color='cyan', width=2, dash='dash'),
+                    showlegend=False
+                ),
+                row=4, col=1
+            )
+    except Exception as e:
+        print(f"Error calculando tendencia híbrida 15M: {e}")
+        # Fallback a tendencia base
+        trend_values_15m = trend_data['trend'].iloc[-len(window_df):]
+        fig.add_trace(
+            go.Scatter(
+                x=window_df.index,
+                y=trend_values_15m,
+                mode='lines',
+                name='Tendencia 15M (Fallback)',
+                line=dict(color='cyan', width=2, dash='dot'),
+                showlegend=False
+            ),
+            row=4, col=1
+        )
     
     # Líneas de referencia para tendencia 15M
     fig.add_hline(y=2, line_dash="dash", line_color="lime", row=4, col=1)  # Alcista fuerte
@@ -971,9 +1085,9 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
         df_1h.index = pd.to_datetime(df_1h.index)
         print(f"DEBUG 1H: Datos resampleados 1H: {len(df_1h)} filas")
         if len(df_1h) > 0:
-            # Calcular tendencia 1H usando la misma lógica
-            trend_1h = signal_visualizer.strategy_lib.market_analysis.detect_trend(df_1h, method='combined')
-            trend_values_1h = trend_1h['trend'].iloc[-len(df_1h):]
+            # Calcular tendencia 1H usando función híbrida
+            trend_1h_hybrid = calculate_hybrid_trend(df_1h, '1H')
+            trend_values_1h = trend_1h_hybrid['trend'].iloc[-len(df_1h):]
             
             # Crear línea de tendencia 1H
             # Usar el índice de window_df para mantener consistencia en el eje X
@@ -982,7 +1096,7 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
                     x=window_df.index,
                     y=trend_values_1h,  # Usar los valores de tendencia 1H pero con el índice de 5M
                     mode='lines',
-                    name='Tendencia 1H',
+                    name='Tendencia 1H (Híbrida)',
                     line=dict(color='yellow', width=2),
                     showlegend=False
                 ),
@@ -1038,9 +1152,9 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
         df_4h.index = pd.to_datetime(df_4h.index)
         print(f"DEBUG 4H: Datos resampleados 4H: {len(df_4h)} filas")
         if len(df_4h) > 0:
-            # Calcular tendencia 4H usando la misma lógica
-            trend_4h = signal_visualizer.strategy_lib.market_analysis.detect_trend(df_4h, method='combined')
-            trend_values_4h = trend_4h['trend'].iloc[-len(df_4h):]
+            # Calcular tendencia 4H usando función híbrida
+            trend_4h_hybrid = calculate_hybrid_trend(df_4h, '4H')
+            trend_values_4h = trend_4h_hybrid['trend'].iloc[-len(df_4h):]
             
             # Crear línea de tendencia 4H
             # Usar el índice de window_df para mantener consistencia en el eje X
@@ -1049,7 +1163,7 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
                     x=window_df.index,
                     y=trend_values_4h,  # Usar los valores de tendencia 4H pero con el índice de 5M
                     mode='lines',
-                    name='Tendencia 4H',
+                    name='Tendencia 4H (Híbrida)',
                     line=dict(color='magenta', width=2),
                     showlegend=False
                 ),
@@ -1130,12 +1244,13 @@ for pos in tqdm(range(window, len(df)), desc="Generando frames"):
     # Guardar frame como PNG
     try:
         frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
-        fig.write_image(frame_filename, width=800, height=900)  # Ajustar altura para 6 subplots
+        fig.write_image(frame_filename, width=800, height=900)
+        print(f"✅ Frame {pos} guardado: {frame_filename}")
     except Exception as e:
         print(f"[WARNING] Frame en posición {pos} falló: {e}")
 
 print(f"✅ Frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING guardados en: {frames_dir}/")
-print(f"📊 Total de frames generados: {len(df) - window}")
+print(f"📊 Total de frames generados: {len(df) - start_pos}")
 print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
 
 # Mostrar detalles de las señales
