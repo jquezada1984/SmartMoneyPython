@@ -10,6 +10,7 @@ from io import BytesIO
 from PIL import Image
 import plotly.io as pio
 from tqdm import tqdm
+import datetime
 
 # Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
 from smartmoneyconcepts.smc import smc
@@ -32,18 +33,38 @@ class TradingSignalVisualizer:
         Calcular señales de trading usando la librería MomentumSMCStrategyLib
         y almacenar los indicadores precalculados para su reutilización
         """
+        print(f"🔄 Iniciando cálculo de señales...")
+        print(f"   📊 Datos a procesar: {len(df)} filas")
+        
         # Precalcular indicadores una sola vez
-        self.cached_indicators = self.strategy_lib.precalculate_indicators(df)
+        print(f"   🔧 Precalculando indicadores...")
+        try:
+            self.cached_indicators = self.strategy_lib.precalculate_indicators(df)
+            print(f"   ✅ Indicadores precalculados exitosamente")
+        except Exception as e:
+            print(f"   ❌ Error precalculando indicadores: {e}")
+            raise e
         
         # Usar la librería para analizar todas las estrategias
-        signals = self.strategy_lib.analyze_all_strategies(df)
+        print(f"   🎯 Analizando estrategias...")
+        try:
+            signals = self.strategy_lib.analyze_all_strategies(df)
+            print(f"   ✅ Análisis de estrategias completado")
+        except Exception as e:
+            print(f"   ❌ Error analizando estrategias: {e}")
+            raise e
         
         # Obtener resumen de señales
-        summary = self.strategy_lib.get_signal_summary(df)
-        print(f"📊 Resumen de señales:")
-        print(f"   Total: {summary['total_signals']}")
-        print(f"   Por estrategia: {summary['by_strategy']}")
-        print(f"   Por confianza: {summary['by_confidence']}")
+        print(f"   📈 Generando resumen de señales...")
+        try:
+            summary = self.strategy_lib.get_signal_summary(df)
+            print(f"📊 Resumen de señales:")
+            print(f"   Total: {summary['total_signals']}")
+            print(f"   Por estrategia: {summary['by_strategy']}")
+            print(f"   Por confianza: {summary['by_confidence']}")
+        except Exception as e:
+            print(f"   ❌ Error generando resumen: {e}")
+            # No fallar si el resumen falla, continuar con las señales
         
         return signals
     
@@ -819,12 +840,23 @@ def import_data():
 
 df = import_data()
 
+start_time = datetime.datetime.now()
+print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"📊 Datos cargados: {len(df)} filas")
+print(f"📅 Rango de fechas: {df.index[0]} a {df.index[-1]}")
+print("=" * 80)
 
 # Inicializar visualizador de señales de trading
+print("🚀 Inicializando visualizador de señales...")
 signal_visualizer = TradingSignalVisualizer()
 print("🔍 Calculando señales de trading...")
-trading_signals = signal_visualizer.calculate_signals(df)
-print(f"✅ Encontradas {len(trading_signals)} señales de trading")
+try:
+    trading_signals = signal_visualizer.calculate_signals(df)
+    print(f"✅ Encontradas {len(trading_signals)} señales de trading")
+except Exception as e:
+    print(f"❌ Error calculando señales: {e}")
+    print(f"⚠️ Continuando sin señales de trading...")
+    trading_signals = []
 
 frames_dir = "frames_png"
 if os.path.exists(frames_dir):
@@ -833,15 +865,38 @@ if os.path.exists(frames_dir):
 os.makedirs(frames_dir)
 
 window = 100
-print(f"🎬 Generando frames PNG desde vela 400 hasta {len(df)} con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING...")
+# Calcular posición de inicio para generar solo los últimos 20 frames
+total_frames_to_generate = 20
+start_pos = max(400, len(df) - total_frames_to_generate)
 
-# Generar frames PNG comenzando desde la vela 400
-start_pos = 400
-for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
+print(f"🎬 Generando ÚLTIMOS {total_frames_to_generate} frames PNG desde vela {start_pos} hasta {len(df)}")
+print(f"📊 Esto mostrará las últimas {total_frames_to_generate} posiciones del análisis")
+print(f"🔍 Verificando cálculos de temporalidades 15M, 1H y 4H...")
+
+print(f"🔄 Iniciando generación de frames...")
+print(f"   📊 Posiciones a procesar: {start_pos} a {len(df)}")
+print(f"   ⏰ Total de frames: {len(df) - start_pos}")
+
+for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
+    print(f"\n🎬 Procesando frame {pos}/{len(df)}...")
     window_df = df.iloc[pos - window : pos]
     
     # Obtener indicadores precalculados
-    cached_indicators = signal_visualizer.get_cached_indicators()
+    try:
+        cached_indicators = signal_visualizer.get_cached_indicators()
+        if cached_indicators is None:
+            print(f"   ⚠️ No hay indicadores precalculados, usando indicadores básicos")
+            # Crear indicadores básicos si no hay precalculados
+            cached_indicators = {
+                'macd_line': calculate_macd(df)[0],
+                'signal_line': calculate_macd(df)[1],
+                'histogram': calculate_macd(df)[2],
+                'rsi': calculate_rsi(df),
+                'trend_data': pd.DataFrame({'trend': [0] * len(df)}, index=df.index)
+            }
+    except Exception as e:
+        print(f"   ❌ Error obteniendo indicadores: {e}")
+        continue
     
     # Obtener ventana de indicadores básicos
     macd_line = cached_indicators['macd_line'].iloc[pos - window:pos]
@@ -1022,6 +1077,10 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
             trend_15m_hybrid = calculate_hybrid_trend(df_15m, '15M')
             trend_values_15m = trend_15m_hybrid['trend'].iloc[-len(df_15m):]
             
+            # Imprimir información detallada de temporalidad 15M
+            current_trend_15m = trend_values_15m.iloc[-1] if len(trend_values_15m) > 0 else 0
+            print(f"📊 Frame {pos} - 15M: {len(df_15m)} velas resampleadas, Tendencia: {current_trend_15m:.2f}")
+            
             # Crear línea de tendencia 15M
             fig.add_trace(
                 go.Scatter(
@@ -1089,6 +1148,10 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
             trend_1h_hybrid = calculate_hybrid_trend(df_1h, '1H')
             trend_values_1h = trend_1h_hybrid['trend'].iloc[-len(df_1h):]
             
+            # Imprimir información detallada de temporalidad 1H
+            current_trend_1h = trend_values_1h.iloc[-1] if len(trend_values_1h) > 0 else 0
+            print(f"📊 Frame {pos} - 1H: {len(df_1h)} velas resampleadas, Tendencia: {current_trend_1h:.2f}")
+            
             # Crear línea de tendencia 1H
             # Usar el índice de window_df para mantener consistencia en el eje X
             fig.add_trace(
@@ -1155,6 +1218,10 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
             # Calcular tendencia 4H usando función híbrida
             trend_4h_hybrid = calculate_hybrid_trend(df_4h, '4H')
             trend_values_4h = trend_4h_hybrid['trend'].iloc[-len(df_4h):]
+            
+            # Imprimir información detallada de temporalidad 4H
+            current_trend_4h = trend_values_4h.iloc[-1] if len(trend_values_4h) > 0 else 0
+            print(f"📊 Frame {pos} - 4H: {len(df_4h)} velas resampleadas, Tendencia: {current_trend_4h:.2f}")
             
             # Crear línea de tendencia 4H
             # Usar el índice de window_df para mantener consistencia en el eje X
@@ -1245,13 +1312,40 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando frames"):
     try:
         frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
         fig.write_image(frame_filename, width=800, height=900)
+        
+        # Mostrar información consolidada del frame
         print(f"✅ Frame {pos} guardado: {frame_filename}")
+        print(f"   📊 Resumen temporalidades:")
+        print(f"      • 15M: {len(df_15m) if 'df_15m' in locals() else 'N/A'} velas, Tendencia: {current_trend_15m if 'current_trend_15m' in locals() else 'N/A'}")
+        print(f"      • 1H:  {len(df_1h) if 'df_1h' in locals() else 'N/A'} velas, Tendencia: {current_trend_1h if 'current_trend_1h' in locals() else 'N/A'}")
+        print(f"      • 4H:  {len(df_4h) if 'df_4h' in locals() else 'N/A'} velas, Tendencia: {current_trend_4h if 'current_trend_4h' in locals() else 'N/A'}")
+        
+        print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df) - start_pos} frames completados")
+        
     except Exception as e:
-        print(f"[WARNING] Frame en posición {pos} falló: {e}")
+        print(f"❌ Frame en posición {pos} falló: {e}")
+        print(f"   🔄 Continuando con el siguiente frame...")
 
+end_time = datetime.datetime.now()
 print(f"✅ Frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING guardados en: {frames_dir}/")
 print(f"📊 Total de frames generados: {len(df) - start_pos}")
 print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
+print(f"⏱️ Tiempo total de ejecución: {end_time - start_time}")
+print("=" * 80)
+
+# Resumen de temporalidades calculadas
+print(f"\n🔍 RESUMEN DE TEMPORALIDADES CALCULADAS:")
+print(f"   📅 Frames analizados: {start_pos} a {len(df)} (últimos {len(df) - start_pos} frames)")
+print(f"   ⏰ Ventana de análisis: {window} velas por frame")
+print(f"   📊 Temporalidades procesadas:")
+print(f"      • 15M: Resampleo desde 5M a 15M")
+print(f"      • 1H:  Resampleo desde 5M a 1H") 
+print(f"      • 4H:  Resampleo desde 5M a 4H")
+print(f"   🎯 Cada frame incluye:")
+print(f"      • Candlesticks principales con indicadores SMC")
+print(f"      • MACD y RSI")
+print(f"      • Tendencias híbridas en 3 timeframes")
+print(f"      • Señales de trading con niveles de confianza")
 
 # Mostrar detalles de las señales
 if trading_signals:
