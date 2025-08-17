@@ -132,19 +132,19 @@ class MarketAnalysisLib:
         if len(df) < self.swing_length * 2:
             # Datos insuficientes
             return pd.DataFrame({
-                'trend': pd.Series(0, index=df.index),
-                'strength': pd.Series(0, index=df.index),
-                'confidence': pd.Series(0, index=df.index)
+                'trend': pd.Series(0.0, index=df.index, dtype=float),
+                'strength': pd.Series(0.0, index=df.index, dtype=float),
+                'confidence': pd.Series(0.0, index=df.index, dtype=float)
             })
         
         # Calcular swing highs/lows
         swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
         bos_choch = smc.bos_choch(df, swing_highs_lows)
         
-        # Inicializar resultados
-        trend = pd.Series(0, index=df.index)
-        strength = pd.Series(0, index=df.index)
-        confidence = pd.Series(0, index=df.index)
+        # Inicializar resultados - usar float64 para permitir valores decimales
+        trend = pd.Series(0.0, index=df.index, dtype=float)
+        strength = pd.Series(0.0, index=df.index, dtype=float)
+        confidence = pd.Series(0.0, index=df.index, dtype=float)
         
         # Analizar cada punto desde swing_length en adelante
         for i in range(self.swing_length, len(df)):
@@ -302,10 +302,10 @@ class MarketAnalysisLib:
         ma_20 = df['close'].rolling(window=20).mean()
         ma_50 = df['close'].rolling(window=50).mean()
         
-        # Inicializar resultados
-        trend = pd.Series(0, index=df.index)
-        strength = pd.Series(0, index=df.index)
-        confidence = pd.Series(0, index=df.index)
+        # Inicializar resultados - usar float64 para permitir valores decimales
+        trend = pd.Series(0.0, index=df.index, dtype=float)
+        strength = pd.Series(0.0, index=df.index, dtype=float)
+        confidence = pd.Series(0.0, index=df.index, dtype=float)
         
         for i in range(50, len(df)):
             # Análisis de MACD
@@ -351,10 +351,10 @@ class MarketAnalysisLib:
         structural_trend = self._detect_trend_structural(df)
         technical_trend = self._detect_trend_technical(df)
         
-        # Combinar resultados
-        combined_trend = pd.Series(0, index=df.index)
-        combined_strength = pd.Series(0, index=df.index)
-        combined_confidence = pd.Series(0, index=df.index)
+        # Combinar resultados - usar float64 para permitir valores decimales
+        combined_trend = pd.Series(0.0, index=df.index, dtype=float)
+        combined_strength = pd.Series(0.0, index=df.index, dtype=float)
+        combined_confidence = pd.Series(0.0, index=df.index, dtype=float)
         
         for i in range(len(df)):
             struct_trend = structural_trend['trend'].iloc[i]
