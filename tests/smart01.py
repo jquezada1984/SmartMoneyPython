@@ -1032,7 +1032,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             confidence = current_confidence / 100.0  # Normalizar a 0-1
             
             print(f"   🔍 SMC detectó: Tendencia={base_trend}, Fuerza={current_strength}, Confianza={current_confidence:.1f}%")
-            print(f"   📊 Analizando 500 velas para contexto completo")
+            print(f"   📊 Analizando 500 velas con método 'structural' (HH+HL, LL+LH, BOS, CHoCH)")
             
         except Exception as e:
             print(f"   ⚠️ Error en SMC, usando análisis simple: {e}")

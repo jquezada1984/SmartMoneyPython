@@ -122,64 +122,170 @@ class MarketAnalysisLib:
     
     def _detect_trend_structural(self, df):
         """
-        Detectar tendencia usando análisis estructural SMC
-        - Swing highs/lows
-        - Break of Structure (BOS)
-        - Patrones de estructura de mercado
+        Detectar tendencia usando análisis estructural SMC mejorado
+        - Swing highs/lows significativos
+        - Higher Highs (HH) y Higher Lows (HL) para tendencia alcista
+        - Lower Lows (LL) y Lower Highs (LH) para tendencia bajista
+        - Break of Structure (BOS) para confirmación
+        - Change of Character (CHoCH) para cambios de tendencia
         """
+        if len(df) < self.swing_length * 2:
+            # Datos insuficientes
+            return pd.DataFrame({
+                'trend': pd.Series(0, index=df.index),
+                'strength': pd.Series(0, index=df.index),
+                'confidence': pd.Series(0, index=df.index)
+            })
+        
         # Calcular swing highs/lows
         swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
         bos_choch = smc.bos_choch(df, swing_highs_lows)
-        trend_data = smc.trend_indicator(df, swing_highs_lows, lookback_period=self.lookback)
         
         # Inicializar resultados
         trend = pd.Series(0, index=df.index)
         strength = pd.Series(0, index=df.index)
         confidence = pd.Series(0, index=df.index)
         
+        # Analizar cada punto desde swing_length en adelante
         for i in range(self.swing_length, len(df)):
-            # Análisis de BOS
-            bos_value = bos_choch['BOS'].iloc[i]
-            trend_value = trend_data['trend'].iloc[i] if 'trend' in trend_data.columns else 0
+            current_trend = 0
+            current_strength = 0
+            current_confidence = 0
             
-            # Determinar tendencia basada en BOS
+            # 1. ANÁLISIS DE BOS (Break of Structure) - Prioridad máxima
+            bos_value = bos_choch['BOS'].iloc[i]
+            choch_value = bos_choch['CHOCH'].iloc[i]
+            
             if not np.isnan(bos_value) and bos_value != 0:
-                trend.iloc[i] = bos_value
-                strength.iloc[i] = 70  # BOS fuerte
-                confidence.iloc[i] = 80
-            elif not np.isnan(trend_value) and trend_value != 0:
-                trend.iloc[i] = trend_value
-                strength.iloc[i] = 60  # Tendencia estructural
-                confidence.iloc[i] = 70
-            else:
-                # Análisis de swing highs/lows
-                recent_swings = swing_highs_lows.iloc[max(0, i-10):i+1]
-                highs = recent_swings[recent_swings['HighLow'] == 1]
-                lows = recent_swings[recent_swings['HighLow'] == -1]
+                # BOS detectado - confirmación de tendencia
+                current_trend = bos_value
+                current_strength = 80
+                current_confidence = 90
                 
-                if len(highs) >= 2 and len(lows) >= 2:
-                    # Verificar si highs y lows son crecientes/decrecientes
-                    high_values = highs['Level'].values
-                    low_values = lows['Level'].values
+            elif not np.isnan(choch_value) and choch_value != 0:
+                # CHoCH detectado - cambio de tendencia
+                current_trend = choch_value
+                current_strength = 85
+                current_confidence = 85
+                
+            else:
+                # 2. ANÁLISIS DE ESTRUCTURA DE SWING POINTS
+                # Buscar swing points en el lookback period
+                lookback_start = max(0, i - self.lookback)
+                recent_swings = swing_highs_lows.iloc[lookback_start:i+1]
+                
+                # Filtrar swing points válidos
+                valid_swings = recent_swings.dropna(subset=['HighLow', 'Level'])
+                
+                if len(valid_swings) >= 4:  # Necesitamos al menos 4 swing points
+                    # Separar highs y lows
+                    highs = valid_swings[valid_swings['HighLow'] == 1].sort_values('Level')
+                    lows = valid_swings[valid_swings['HighLow'] == -1].sort_values('Level')
                     
-                    if len(high_values) >= 2 and len(low_values) >= 2:
-                        high_trend = np.polyfit(range(len(high_values)), high_values, 1)[0]
-                        low_trend = np.polyfit(range(len(low_values)), low_values, 1)[0]
+                    if len(highs) >= 2 and len(lows) >= 2:
+                        # 3. ANÁLISIS DE TENDENCIA ALCISTA: Higher Highs (HH) + Higher Lows (HL)
+                        high_trend_alcista = self._analyze_higher_highs_lows(highs, lows)
                         
-                        if high_trend > 0 and low_trend > 0:
-                            trend.iloc[i] = 1  # Alcista
-                            strength.iloc[i] = 50
-                            confidence.iloc[i] = 60
-                        elif high_trend < 0 and low_trend < 0:
-                            trend.iloc[i] = -1  # Bajista
-                            strength.iloc[i] = 50
-                            confidence.iloc[i] = 60
+                        # 4. ANÁLISIS DE TENDENCIA BAJISTA: Lower Lows (LL) + Lower Highs (LH)
+                        low_trend_bajista = self._analyze_lower_lows_highs(highs, lows)
+                        
+                        # 5. DETERMINAR TENDENCIA DOMINANTE
+                        if high_trend_alcista['confirmed'] and high_trend_alcista['strength'] > low_trend_bajista['strength']:
+                            current_trend = 1  # Alcista
+                            current_strength = high_trend_alcista['strength']
+                            current_confidence = 75
+                            
+                        elif low_trend_bajista['confirmed'] and low_trend_bajista['strength'] > high_trend_alcista['strength']:
+                            current_trend = -1  # Bajista
+                            current_strength = low_trend_bajista['strength']
+                            current_confidence = 75
+                            
+                        else:
+                            # 6. ANÁLISIS DE RANGO/CONSOLIDACIÓN
+                            range_analysis = self._analyze_range_consolidation(valid_swings, df.iloc[lookback_start:i+1])
+                            if range_analysis['is_range']:
+                                current_trend = 0  # Lateral/Rango
+                                current_strength = range_analysis['strength']
+                                current_confidence = 65
+            
+            # Asignar valores a las series
+            trend.iloc[i] = current_trend
+            strength.iloc[i] = current_strength
+            confidence.iloc[i] = current_confidence
         
         return pd.DataFrame({
             'trend': trend,
             'strength': strength,
             'confidence': confidence
         })
+    
+    def _analyze_higher_highs_lows(self, highs, lows):
+        """
+        Analizar si hay Higher Highs (HH) y Higher Lows (HL) para tendencia alcista
+        """
+        if len(highs) < 2 or len(lows) < 2:
+            return {'confirmed': False, 'strength': 0}
+        
+        # Verificar Higher Highs (HH)
+        high_values = highs['Level'].values
+        hh_confirmed = high_values[-1] > high_values[-2]
+        
+        # Verificar Higher Lows (HL)
+        low_values = lows['Level'].values
+        hl_confirmed = low_values[-1] > low_values[-2]
+        
+        # Calcular fuerza basada en la pendiente
+        if hh_confirmed and hl_confirmed:
+            high_slope = (high_values[-1] - high_values[0]) / (len(high_values) - 1)
+            low_slope = (low_values[-1] - low_values[0]) / (len(low_values) - 1)
+            strength = min(80, (high_slope + low_slope) * 1000)  # Escalar la pendiente
+            return {'confirmed': True, 'strength': strength}
+        
+        return {'confirmed': False, 'strength': 0}
+    
+    def _analyze_lower_lows_highs(self, highs, lows):
+        """
+        Analizar si hay Lower Lows (LL) y Lower Highs (LH) para tendencia bajista
+        """
+        if len(highs) < 2 or len(lows) < 2:
+            return {'confirmed': False, 'strength': 0}
+        
+        # Verificar Lower Lows (LL)
+        low_values = lows['Level'].values
+        ll_confirmed = low_values[-1] < low_values[-2]
+        
+        # Verificar Lower Highs (LH)
+        high_values = highs['Level'].values
+        lh_confirmed = high_values[-1] < high_values[-2]
+        
+        # Calcular fuerza basada en la pendiente
+        if ll_confirmed and lh_confirmed:
+            high_slope = (high_values[-1] - high_values[0]) / (len(high_values) - 1)
+            low_slope = (low_values[-1] - low_values[0]) / (len(low_values) - 1)
+            strength = min(80, abs(high_slope + low_slope) * 1000)  # Escalar la pendiente
+            return {'confirmed': True, 'strength': strength}
+        
+        return {'confirmed': False, 'strength': 0}
+    
+    def _analyze_range_consolidation(self, swings, price_data):
+        """
+        Analizar si el mercado está en rango/consolidación
+        """
+        if len(swings) < 3:
+            return {'is_range': False, 'strength': 0}
+        
+        # Calcular volatilidad del rango
+        price_range = price_data['high'].max() - price_data['low'].min()
+        avg_price = price_data['close'].mean()
+        volatility = price_range / avg_price
+        
+        # Si la volatilidad es baja, es probable un rango
+        if volatility < 0.02:  # Menos del 2%
+            # Calcular fuerza basada en la estabilidad
+            strength = min(60, (0.02 - volatility) * 3000)
+            return {'is_range': True, 'strength': strength}
+        
+        return {'is_range': False, 'strength': 0}
     
     def _detect_trend_technical(self, df):
         """
