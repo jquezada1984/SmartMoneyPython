@@ -160,18 +160,44 @@ class OptimizedTradingVisualizer:
                 last_confidence = trend_data['confidence'].iloc[-1] if 'confidence' in trend_data.columns else 0
                 print(f"      Último valor - T:{last_trend:.4f}, F:{last_strength:.4f}, C:{last_confidence:.4f}")
             
-            # Crear DataFrame de tendencia simple para graficar
-            # En lugar de sincronización compleja, usar valores constantes para la ventana
-            trend_simple = pd.DataFrame(index=df_subset.index)
-            trend_simple['trend'] = last_trend if 'trend' in trend_data.columns else 0
-            trend_simple['strength'] = last_strength if 'strength' in trend_data.columns else 0
-            trend_simple['confidence'] = last_confidence if 'confidence' in trend_data.columns else 0
+            # CORREGIR: Usar la tendencia real en lugar de valores constantes
+            # Crear DataFrame de tendencia que mantenga la variabilidad temporal
+            trend_real = pd.DataFrame(index=df_subset.index)
+            
+            # Para cada vela 5M, asignar la tendencia correspondiente del timeframe superior
+            # Esto requiere mapear las velas 5M a las velas del timeframe superior
+            trend_values = []
+            for i, timestamp in enumerate(df_subset.index):
+                # Calcular qué vela del timeframe superior corresponde a esta vela 5M
+                if target_timeframe == '15M':
+                    tf_index = i // 3  # Cada 3 velas 5M = 1 vela 15M
+                elif target_timeframe == '1H':
+                    tf_index = i // 12  # Cada 12 velas 5M = 1 vela 1H
+                elif target_timeframe == '4H':
+                    tf_index = i // 48  # Cada 48 velas 5M = 1 vela 4H
+                
+                # Obtener el valor de tendencia correspondiente
+                if tf_index < len(trend_data):
+                    trend_val = trend_data['trend'].iloc[tf_index] if 'trend' in trend_data.columns else 0
+                    strength_val = trend_data['strength'].iloc[tf_index] if 'strength' in trend_data.columns else 0
+                    confidence_val = trend_data['confidence'].iloc[tf_index] if 'confidence' in trend_data.columns else 0
+                else:
+                    # Si no hay suficientes datos, usar el último valor disponible
+                    trend_val = last_trend
+                    strength_val = last_strength
+                    confidence_val = last_confidence
+                
+                trend_values.append(trend_val)
+            
+            trend_real['trend'] = trend_values
+            trend_real['strength'] = [last_strength] * len(df_subset)  # Mantener consistencia
+            trend_real['confidence'] = [last_confidence] * len(df_subset)  # Mantener consistencia
             
             elapsed = time.time() - start_time
             print(f"✅ Tendencia {target_timeframe} calculada en {elapsed:.2f}s")
             
             return {
-                'trend_data': trend_simple,
+                'trend_data': trend_real,
                 'resampled_df': df_resampled,
                 'original_5m_count': len(df_subset),
                 'resampled_count': len(df_resampled)
@@ -541,7 +567,7 @@ def create_optimized_chart(df_completo, df_5m_indicators, pos, window, visualize
 
 def import_data(velas_requeridas=None):
     """Importar datos desde CSV - calcula automáticamente cuántas velas necesita"""
-    csv_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+    csv_path = "tests/test_data/EURUSD/EURUSD_5M_20250815_094446.csv"
     df = pd.read_csv(csv_path, index_col="datetime")
     df = df.astype(float)
     df = df[["open", "high", "low", "close", "volume"]]

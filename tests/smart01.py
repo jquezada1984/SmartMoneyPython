@@ -235,9 +235,16 @@ def calculate_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_hybrid_trend(df, timeframe_name):
+def calculate_hybrid_trend(df, timeframe_name, base_df=None, base_timeframe='5m'):
     """
     Calcular tendencia híbrida combinando SMC con análisis de precios
+    Para timeframes superiores, toma más velas del CSV base para tener suficientes datos
+    
+    Parámetros:
+    df: DataFrame del timeframe actual
+    timeframe_name: Nombre del timeframe (ej: '15M', '1H', '4H')
+    base_df: DataFrame completo del timeframe base (5M) para cálculos adicionales
+    base_timeframe: Timeframe base (por defecto '5m')
     """
     try:
         # 1. Intentar SMC primero
@@ -820,8 +827,8 @@ def add_retracements(fig, df, retracements):
 
 # get the data
 def import_data():
-    # Reemplaza la función import_data y la carga de df por esto:
-    csv_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+    # Usar el archivo CSV exportado de MT5 con datos de 5 minutos (40,000 velas)
+    csv_path = "tests/test_data/EURUSD/EURUSD_5M_20250815_094446.csv"
     """Importa datos desde CSV - procesados igual que los datos de Binance"""
     # Leer el CSV desde el directorio raíz
     df = pd.read_csv(csv_path, index_col="datetime")
@@ -833,17 +840,30 @@ def import_data():
     # Convertir el índice a datetime y luego a string con formato específico (igual que Binance)
     df.index = pd.to_datetime(df.index)
     df.index = df.index.strftime("%Y-%m-%d %H:%M:%S")    
-    # Tomar las últimas 500 filas (igual que en Binance)
+    
+    # Para 5 minutos solo tomamos las últimas 300 velas
+    # Para timeframes superiores tomaremos más velas del CSV base cuando sea necesario
+    df_5m = df.tail(300)
+    
+    print(f"📊 Datos cargados desde: {csv_path}")
+    print(f"   📈 Total de velas en CSV: {len(df)}")
+    print(f"   📈 Velas seleccionadas para 5M: {len(df_5m)} (últimas 300)")
+    print(f"   ⏰ Timeframe base: 5 minutos")
+    print(f"   📅 Rango 5M: {df_5m.index[0]} a {df_5m.index[-1]}")
+    print(f"   💡 Para timeframes superiores se tomarán más velas del CSV base:")
+    print(f"      • 15M: 300*3 = 900 velas del CSV base")
+    print(f"      • 1H:  300*12 = 3600 velas del CSV base")
+    print(f"      • 4H:  300*48 = 14400 velas del CSV base")
+    
+    return df_5m, df  # Retornar tanto los datos de 5M como el CSV completo
 
-    return df
 
-
-df = import_data()
+df_5m, df = import_data()
 
 start_time = datetime.datetime.now()
 print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-print(f"📊 Datos cargados: {len(df)} filas")
-print(f"📅 Rango de fechas: {df.index[0]} a {df.index[-1]}")
+print(f"📊 Datos cargados: {len(df_5m)} filas")
+print(f"📅 Rango de fechas: {df_5m.index[0]} a {df_5m.index[-1]}")
 print("=" * 80)
 
 # Inicializar visualizador de señales de trading
@@ -851,7 +871,7 @@ print("🚀 Inicializando visualizador de señales...")
 signal_visualizer = TradingSignalVisualizer()
 print("🔍 Calculando señales de trading...")
 try:
-    trading_signals = signal_visualizer.calculate_signals(df)
+    trading_signals = signal_visualizer.calculate_signals(df_5m)
     print(f"✅ Encontradas {len(trading_signals)} señales de trading")
 except Exception as e:
     print(f"❌ Error calculando señales: {e}")
@@ -867,19 +887,20 @@ os.makedirs(frames_dir)
 window = 100
 # Calcular posición de inicio para generar solo los últimos 20 frames
 total_frames_to_generate = 20
-start_pos = max(400, len(df) - total_frames_to_generate)
+# Corregir: start_pos debe ser menor que len(df_5m) y mayor o igual que window
+start_pos = max(window, len(df_5m) - total_frames_to_generate)
 
-print(f"🎬 Generando ÚLTIMOS {total_frames_to_generate} frames PNG desde vela {start_pos} hasta {len(df)}")
+print(f"🎬 Generando ÚLTIMOS {total_frames_to_generate} frames PNG desde vela {start_pos} hasta {len(df_5m)}")
 print(f"📊 Esto mostrará las últimas {total_frames_to_generate} posiciones del análisis")
 print(f"🔍 Verificando cálculos de temporalidades 15M, 1H y 4H...")
 
 print(f"🔄 Iniciando generación de frames...")
-print(f"   📊 Posiciones a procesar: {start_pos} a {len(df)}")
-print(f"   ⏰ Total de frames: {len(df) - start_pos}")
+print(f"   📊 Posiciones a procesar: {start_pos} a {len(df_5m)}")
+print(f"   ⏰ Total de frames: {len(df_5m) - start_pos}")
 
-for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
-    print(f"\n🎬 Procesando frame {pos}/{len(df)}...")
-    window_df = df.iloc[pos - window : pos]
+for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
+    print(f"\n🎬 Procesando frame {pos}/{len(df_5m)}...")
+    window_df = df_5m.iloc[pos - window : pos]
     
     # Obtener indicadores precalculados
     try:
@@ -888,11 +909,11 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
             print(f"   ⚠️ No hay indicadores precalculados, usando indicadores básicos")
             # Crear indicadores básicos si no hay precalculados
             cached_indicators = {
-                'macd_line': calculate_macd(df)[0],
-                'signal_line': calculate_macd(df)[1],
-                'histogram': calculate_macd(df)[2],
-                'rsi': calculate_rsi(df),
-                'trend_data': pd.DataFrame({'trend': [0] * len(df)}, index=df.index)
+                'macd_line': calculate_macd(df_5m)[0],
+                'signal_line': calculate_macd(df_5m)[1],
+                'histogram': calculate_macd(df_5m)[2],
+                'rsi': calculate_rsi(df_5m),
+                'trend_data': pd.DataFrame({'trend': [0] * len(df_5m)}, index=df_5m.index)
             }
     except Exception as e:
         print(f"   ❌ Error obteniendo indicadores: {e}")
@@ -948,10 +969,10 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
     add_previous_high_low(fig, window_df, previous_high_low_data)
     add_sessions(fig, window_df, sessions)
     add_retracements(fig, window_df, retracements)
-    add_trend_indicator(fig, df, trend_data, window_df)
+    add_trend_indicator(fig, df_5m, trend_data, window_df)
     
     # Agregar señales de trading
-    add_trading_signals(fig, df, trading_signals, window_df)
+    add_trading_signals(fig, df_5m, trading_signals, window_df)
     
     # 2. GRÁFICO MACD
     fig.add_trace(
@@ -1064,8 +1085,14 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
     # 4. GRÁFICO TENDENCIA 15M - Línea continua
     # Calcular tendencia híbrida para 15M
     try:
+        # Para 15M necesitamos 3x más velas del CSV base para tener suficientes datos
+        # Tomar 900 velas del CSV base (300 * 3) para asegurar 300 velas de 15M
+        required_base_velas = 900
+        start_pos_15m = max(0, len(df) - required_base_velas)
+        base_data_15m = df.iloc[start_pos_15m:]
+        
         # Crear DataFrame de 15M desde los datos de 5M
-        df_temp = window_df.copy()
+        df_temp = base_data_15m.copy()
         df_temp.index = pd.to_datetime(df_temp.index)
         
         df_15m = df_temp.resample('15min').agg({
@@ -1074,18 +1101,20 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
         
         if len(df_15m) > 0:
             # Usar función híbrida para calcular tendencia
-            trend_15m_hybrid = calculate_hybrid_trend(df_15m, '15M')
+            trend_15m_hybrid = calculate_hybrid_trend(df_15m, '15M', base_df=base_data_15m, base_timeframe='5m')
             trend_values_15m = trend_15m_hybrid['trend'].iloc[-len(df_15m):]
             
             # Imprimir información detallada de temporalidad 15M
             current_trend_15m = trend_values_15m.iloc[-1] if len(trend_values_15m) > 0 else 0
-            print(f"📊 Frame {pos} - 15M: {len(df_15m)} velas resampleadas, Tendencia: {current_trend_15m:.2f}")
+            print(f"📊 Frame {pos} - 15M: {len(df_15m)} velas resampleadas (desde {len(base_data_15m)} velas 5M del CSV base), Tendencia: {current_trend_15m:.2f}")
             
             # Crear línea de tendencia 15M
+            # Usar solo los últimos valores de tendencia para la ventana actual
+            trend_window_15m = trend_values_15m.tail(len(window_df))
             fig.add_trace(
                 go.Scatter(
                     x=window_df.index,
-                    y=trend_values_15m,
+                    y=trend_window_15m,
                     mode='lines',
                     name='Tendencia 15M (Híbrida)',
                     line=dict(color='cyan', width=2),
@@ -1133,8 +1162,14 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
     # 5. GRÁFICO TENDENCIA 1H - Línea continua
     # Obtener valores de tendencia para 1H (resamplear desde 5M)
     try:
+        # Para 1H necesitamos 12x más velas del CSV base para tener suficientes datos
+        # Tomar 3600 velas del CSV base (300 * 12) para asegurar 300 velas de 1H
+        required_base_velas = 3600
+        start_pos_1h = max(0, len(df) - required_base_velas)
+        base_data_1h = df.iloc[start_pos_1h:]
+        
         # Crear una copia del DataFrame con índice datetime
-        df_temp = window_df.copy()
+        df_temp = base_data_1h.copy()
         df_temp.index = pd.to_datetime(df_temp.index)
         
         df_1h = df_temp.resample('1h').agg({
@@ -1142,22 +1177,23 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
         }).dropna()
         # Asegurar que el índice sea datetime
         df_1h.index = pd.to_datetime(df_1h.index)
-        print(f"DEBUG 1H: Datos resampleados 1H: {len(df_1h)} filas")
+        print(f"DEBUG 1H: Datos resampleados 1H: {len(df_1h)} filas (desde {len(base_data_1h)} velas 5M del CSV base)")
         if len(df_1h) > 0:
             # Calcular tendencia 1H usando función híbrida
-            trend_1h_hybrid = calculate_hybrid_trend(df_1h, '1H')
+            trend_1h_hybrid = calculate_hybrid_trend(df_1h, '1H', base_df=base_data_1h, base_timeframe='5m')
             trend_values_1h = trend_1h_hybrid['trend'].iloc[-len(df_1h):]
             
             # Imprimir información detallada de temporalidad 1H
             current_trend_1h = trend_values_1h.iloc[-1] if len(trend_values_1h) > 0 else 0
-            print(f"📊 Frame {pos} - 1H: {len(df_1h)} velas resampleadas, Tendencia: {current_trend_1h:.2f}")
+            print(f"📊 Frame {pos} - 1H: {len(df_1h)} velas resampleadas (desde {len(base_data_1h)} velas 5M del CSV base), Tendencia: {current_trend_1h:.2f}")
             
             # Crear línea de tendencia 1H
-            # Usar el índice de window_df para mantener consistencia en el eje X
+            # Usar solo los últimos valores de tendencia para la ventana actual
+            trend_window_1h = trend_values_1h.tail(len(window_df))
             fig.add_trace(
                 go.Scatter(
                     x=window_df.index,
-                    y=trend_values_1h,  # Usar los valores de tendencia 1H pero con el índice de 5M
+                    y=trend_window_1h,  # Usar los valores de tendencia 1H pero con el índice de 5M
                     mode='lines',
                     name='Tendencia 1H (Híbrida)',
                     line=dict(color='yellow', width=2),
@@ -1204,8 +1240,14 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
     # 6. GRÁFICO TENDENCIA 4H - Línea continua
     # Obtener valores de tendencia para 4H (resamplear desde 5M)
     try:
+        # Para 4H necesitamos 48x más velas del CSV base para tener suficientes datos
+        # Tomar 14400 velas del CSV base (300 * 48) para asegurar 300 velas de 4H
+        required_base_velas = 14400
+        start_pos_4h = max(0, len(df) - required_base_velas)
+        base_data_4h = df.iloc[start_pos_4h:]
+        
         # Crear una copia del DataFrame con índice datetime
-        df_temp = window_df.copy()
+        df_temp = base_data_4h.copy()
         df_temp.index = pd.to_datetime(df_temp.index)
         
         df_4h = df_temp.resample('4h').agg({
@@ -1213,22 +1255,23 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
         }).dropna()
         # Asegurar que el índice sea datetime
         df_4h.index = pd.to_datetime(df_4h.index)
-        print(f"DEBUG 4H: Datos resampleados 4H: {len(df_4h)} filas")
+        print(f"DEBUG 4H: Datos resampleados 4H: {len(df_4h)} filas (desde {len(base_data_4h)} velas 5M del CSV base)")
         if len(df_4h) > 0:
             # Calcular tendencia 4H usando función híbrida
-            trend_4h_hybrid = calculate_hybrid_trend(df_4h, '4H')
+            trend_4h_hybrid = calculate_hybrid_trend(df_4h, '4H', base_df=base_data_4h, base_timeframe='5m')
             trend_values_4h = trend_4h_hybrid['trend'].iloc[-len(df_4h):]
             
             # Imprimir información detallada de temporalidad 4H
             current_trend_4h = trend_values_4h.iloc[-1] if len(trend_values_4h) > 0 else 0
-            print(f"📊 Frame {pos} - 4H: {len(df_4h)} velas resampleadas, Tendencia: {current_trend_4h:.2f}")
+            print(f"📊 Frame {pos} - 4H: {len(df_4h)} velas resampleadas (desde {len(base_data_4h)} velas 5M del CSV base), Tendencia: {current_trend_4h:.2f}")
             
             # Crear línea de tendencia 4H
-            # Usar el índice de window_df para mantener consistencia en el eje X
+            # Usar solo los últimos valores de tendencia para la ventana actual
+            trend_window_4h = trend_values_4h.tail(len(window_df))
             fig.add_trace(
                 go.Scatter(
                     x=window_df.index,
-                    y=trend_values_4h,  # Usar los valores de tendencia 4H pero con el índice de 5M
+                    y=trend_window_4h,  # Usar los valores de tendencia 4H pero con el índice de 5M
                     mode='lines',
                     name='Tendencia 4H (Híbrida)',
                     line=dict(color='magenta', width=2),
@@ -1320,7 +1363,7 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
         print(f"      • 1H:  {len(df_1h) if 'df_1h' in locals() else 'N/A'} velas, Tendencia: {current_trend_1h if 'current_trend_1h' in locals() else 'N/A'}")
         print(f"      • 4H:  {len(df_4h) if 'df_4h' in locals() else 'N/A'} velas, Tendencia: {current_trend_4h if 'current_trend_4h' in locals() else 'N/A'}")
         
-        print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df) - start_pos} frames completados")
+        print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
         
     except Exception as e:
         print(f"❌ Frame en posición {pos} falló: {e}")
@@ -1328,24 +1371,30 @@ for pos in tqdm(range(start_pos, len(df)), desc="Generando últimos frames"):
 
 end_time = datetime.datetime.now()
 print(f"✅ Frames PNG con MACD, RSI, TENDENCIA 15M/1H/4H y SEÑALES DE TRADING guardados en: {frames_dir}/")
-print(f"📊 Total de frames generados: {len(df) - start_pos}")
+print(f"📊 Total de frames generados: {len(df_5m) - start_pos}")
 print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
 print(f"⏱️ Tiempo total de ejecución: {end_time - start_time}")
 print("=" * 80)
 
 # Resumen de temporalidades calculadas
 print(f"\n🔍 RESUMEN DE TEMPORALIDADES CALCULADAS:")
-print(f"   📅 Frames analizados: {start_pos} a {len(df)} (últimos {len(df) - start_pos} frames)")
+print(f"   📅 Frames analizados: {start_pos} a {len(df_5m)} (últimos {len(df_5m) - start_pos} frames)")
 print(f"   ⏰ Ventana de análisis: {window} velas por frame")
 print(f"   📊 Temporalidades procesadas:")
-print(f"      • 15M: Resampleo desde 5M a 15M")
-print(f"      • 1H:  Resampleo desde 5M a 1H") 
-print(f"      • 4H:  Resampleo desde 5M a 4H")
+print(f"      • 5M:  Últimas 300 velas del CSV (datos principales)")
+print(f"      • 15M: Resampleo desde 5M a 15M (tomando 900 velas 5M del CSV base)")
+print(f"      • 1H:  Resampleo desde 5M a 1H (tomando 3600 velas 5M del CSV base)") 
+print(f"      • 4H:  Resampleo desde 5M a 4H (tomando 14400 velas 5M del CSV base)")
 print(f"   🎯 Cada frame incluye:")
-print(f"      • Candlesticks principales con indicadores SMC")
-print(f"      • MACD y RSI")
-print(f"      • Tendencias híbridas en 3 timeframes")
+print(f"      • Candlesticks principales con indicadores SMC (desde 300 velas 5M)")
+print(f"      • MACD y RSI (desde 300 velas 5M)")
+print(f"      • Tendencias híbridas en 3 timeframes (calculadas con suficientes datos del CSV base)")
 print(f"      • Señales de trading con niveles de confianza")
+print(f"   📈 Lógica de cálculo optimizada:")
+print(f"      • Para 5M:  300 velas (últimas del CSV)")
+print(f"      • Para 15M: 300 velas objetivo = 900 velas 5M del CSV base")
+print(f"      • Para 1H:  300 velas objetivo = 3600 velas 5M del CSV base")
+print(f"      • Para 4H:  300 velas objetivo = 14400 velas 5M del CSV base")
 
 # Mostrar detalles de las señales
 if trading_signals:

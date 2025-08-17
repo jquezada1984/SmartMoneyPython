@@ -20,7 +20,7 @@ def load_test_data():
     
     try:
         # Cargar datos desde el archivo CSV
-        file_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+        file_path = "tests/test_data/EURUSD/EURUSD_5M_20250815_094446.csv"
         df = pd.read_csv(file_path)
         
         # Leer el CSV con datetime como índice
@@ -35,15 +35,32 @@ def load_test_data():
         # Convertir el índice a datetime
         df.index = pd.to_datetime(df.index)
         
-        print(f"✅ Datos cargados: {len(df)} registros")
-        print(f"   Rango: {df.index[0]} a {df.index[-1]}")
-        print(f"   Columnas: {list(df.columns)}")
+        # MODIFICAR: Para 5M usar solo las últimas 300 velas como en smart01_optimized.py
+        # Para 15M: 300 velas × 3 = 900 velas 5M
+        # Para 1H: 300 velas × 12 = 3600 velas 5M  
+        # Para 4H: 300 velas × 48 = 14400 velas 5M
+        # Total requerido: 14400 velas 5M para cálculos de timeframes superiores
         
-        return df
+        total_required = 14400
+        if len(df) >= total_required:
+            df_full = df.tail(total_required)  # Para cálculos de timeframes superiores
+            df_5m = df.tail(300)  # Solo 300 velas para análisis directo de 5M
+            print(f"✅ Usando solo las últimas 300 velas para análisis directo de 5M")
+            print(f"✅ Usando {total_required} velas para cálculos de timeframes superiores")
+        else:
+            print(f"⚠️ Datos insuficientes: {len(df)} velas disponibles")
+            df_full = df
+            df_5m = df.tail(min(300, len(df)))
+        
+        print(f"✅ Datos cargados: {len(df_5m)} registros para 5M directo")
+        print(f"   Rango 5M: {df_5m.index[0]} a {df_5m.index[-1]}")
+        print(f"   Columnas: {list(df_5m.columns)}")
+        
+        return df_5m, df_full
         
     except Exception as e:
         print(f"❌ Error cargando datos: {e}")
-        return None
+        return None, None
 
 def resample_data(df, timeframe):
     """Resamplear datos a un timeframe específico"""
@@ -70,6 +87,12 @@ def resample_data(df, timeframe):
     
     # Eliminar filas con NaN
     df_resampled = df_resampled.dropna()
+    
+    # MODIFICAR: Usar solo las últimas 300 velas como en smart01_optimized.py
+    max_velas = 300
+    if len(df_resampled) > max_velas:
+        df_resampled = df_resampled.tail(max_velas)
+        print(f"   📊 Usando solo las últimas {max_velas} velas de {timeframe}")
     
     return df_resampled
 
@@ -148,23 +171,25 @@ def main():
     print("=" * 60)
     
     # 1. Cargar datos
-    df_5m = load_test_data()
+    df_5m, df_full = load_test_data()
     if df_5m is None:
         return
     
     # 2. Resamplear a diferentes timeframes
     print("\n🔄 Resampleando datos...")
     
-    df_15m = resample_data(df_5m, '15min')
-    df_1h = resample_data(df_5m, '1h')
-    df_4h = resample_data(df_5m, '4h')
+    df_15m = resample_data(df_full, '15min')
+    df_1h = resample_data(df_full, '1h')
+    df_4h = resample_data(df_full, '4h')
     
+    print(f"✅ 5M:  {len(df_5m)} registros (datos originales)")
     print(f"✅ 15M: {len(df_15m)} registros")
-    print(f"✅ 1H: {len(df_1h)} registros")
-    print(f"✅ 4H: {len(df_4h)} registros")
+    print(f"✅ 1H:  {len(df_1h)} registros")
+    print(f"✅ 4H:  {len(df_4h)} registros")
     
     # 3. Diagnóstico SMC para cada timeframe
     timeframes = [
+        ("5M", df_5m),   # Agregar análisis directo de 5M
         ("15M", df_15m),
         ("1H", df_1h),
         ("4H", df_4h)
