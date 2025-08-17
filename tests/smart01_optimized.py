@@ -567,7 +567,7 @@ def create_optimized_chart(df_completo, df_5m_indicators, pos, window, visualize
 
 def import_data(velas_requeridas=None):
     """Importar datos desde CSV - calcula automáticamente cuántas velas necesita"""
-    csv_path = "tests/test_data/EURUSD/EURUSD_5M_20250815_094446.csv"
+    csv_path = "tests/test_data/EURUSD_5M_2025_filtrado_fast.csv"
     df = pd.read_csv(csv_path, index_col="datetime")
     df = df.astype(float)
     df = df[["open", "high", "low", "close", "volume"]]
