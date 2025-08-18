@@ -314,36 +314,91 @@ def calculate_hybrid_trend(df, timeframe_name, base_df=None, base_timeframe='5m'
         }, index=df.index)
         return neutral_trend
 
+def analyze_simple_price_trend(window_df):
+    """
+    Análisis simple de tendencia basado en precio cuando no hay estructura SMC clara
+    """
+    if len(window_df) < 10:
+        return 0
+    
+    # Calcular cambio de precio en las últimas 10 velas
+    recent_prices = window_df['close'].tail(10)
+    price_change = recent_prices.iloc[-1] - recent_prices.iloc[0]
+    price_change_pct = (price_change / recent_prices.iloc[0]) * 100
+    
+    # Calcular medias móviles simples
+    ma_short = window_df['close'].rolling(window=5).mean()
+    ma_long = window_df['close'].rolling(window=10).mean()
+    
+    # Determinar tendencia por precios
+    if (ma_short.iloc[-1] > ma_long.iloc[-1] and price_change_pct > 0.1):
+        return 1  # Alcista
+    elif (ma_short.iloc[-1] < ma_long.iloc[-1] and price_change_pct < -0.1):
+        return -1  # Bajista
+    else:
+        return 0  # Lateral
+
 def add_trend_indicator(fig, df, trend_data, window_df):
     """
     Agregar indicador de tendencia de 5M en su propio panel
     """
-    # Obtener el valor de tendencia actual
-    current_trend = trend_data['trend'].iloc[-1]
-    
-    if pd.isna(current_trend):
-        return fig
-    
     # Obtener la ventana de tendencia para el gráfico
     trend_window = trend_data['trend'].iloc[-len(window_df):]
     
-    # Agregar línea de tendencia de 5M en el panel de tendencia (row=2)
+    if len(trend_window) == 0 or trend_window.isna().all():
+        return fig
+    
+    # Agregar líneas de referencia para la tendencia (primero para que estén detrás)
+    fig.add_hline(y=1, line_dash="dash", line_color="lime", row=2, col=1)  # Alcista
+    fig.add_hline(y=0, line_dash="solid", line_color="gray", row=2, col=1)  # Lateral
+    fig.add_hline(y=-1, line_dash="dash", line_color="red", row=2, col=1)   # Bajista
+    
+    # Agregar línea de tendencia de 5M en el panel de tendencia (row=2) - DESPUÉS para que esté por encima
     fig.add_trace(
         go.Scatter(
             x=window_df.index,
             y=trend_window,
             mode='lines',
             name='Tendencia 5M',
-            line=dict(color='cyan', width=2, dash='solid'),
-            showlegend=False
+            line=dict(color='cyan', width=3, dash='solid'),  # Línea más gruesa
+            showlegend=False,
+            connectgaps=True,  # Conectar puntos faltantes para línea continua
+            opacity=0.9  # Asegurar que sea visible
         ),
         row=2, col=1
     )
     
-    # Agregar líneas de referencia para la tendencia
-    fig.add_hline(y=1, line_dash="dash", line_color="lime", row=2, col=1)  # Alcista
-    fig.add_hline(y=0, line_dash="solid", line_color="gray", row=2, col=1)  # Lateral
-    fig.add_hline(y=-1, line_dash="dash", line_color="red", row=2, col=1)   # Bajista
+    # Agregar anotación del valor actual de tendencia
+    current_trend = trend_window.iloc[-1]
+    
+    # Determinar el tipo de tendencia basado en el valor
+    if current_trend > 0.3:
+        trend_type = "ALCISTA"
+        trend_color = "lime"
+    elif current_trend < -0.3:
+        trend_type = "BAJISTA"
+        trend_color = "red"
+    else:
+        trend_type = "LATERAL"
+        trend_color = "gray"
+    
+    trend_text = f"{trend_type}<br>{current_trend:.2f}"
+    
+    fig.add_annotation(
+        x=window_df.index[-1],
+        y=current_trend,
+        text=trend_text,
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor=trend_color,
+        font=dict(size=10, color=trend_color),
+        bgcolor="rgba(0,0,0,0.8)",
+        bordercolor=trend_color,
+        borderwidth=1,
+        row=2, col=1
+    )
     
     return fig
 
@@ -859,12 +914,12 @@ def import_data():
     df.index = pd.to_datetime(df.index)
     df.index = df.index.strftime("%Y-%m-%d %H:%M:%S")    
     
-    # Para 5 minutos solo tomamos las últimas 300 velas
-    df_5m = df.tail(300)
+    # Para 5 minutos tomamos las últimas 500 velas para tener más contexto
+    df_5m = df.tail(500)
     
     print(f"📊 Datos cargados desde: {csv_path}")
     print(f"   📈 Total de velas en CSV: {len(df)}")
-    print(f"   📈 Velas seleccionadas para 5M: {len(df_5m)} (últimas 300)")
+    print(f"   📈 Velas seleccionadas para 5M: {len(df_5m)} (últimas 500)")
     print(f"   ⏰ Timeframe: 5 minutos")
     print(f"   📅 Rango: {df_5m.index[0]} a {df_5m.index[-1]}")
     print(f"   💡 Análisis simplificado: Solo 5M con tendencia dibujada en el gráfico")
@@ -883,6 +938,18 @@ print("=" * 80)
 # Inicializar visualizador de señales de trading
 print("🚀 Inicializando visualizador de señales...")
 signal_visualizer = TradingSignalVisualizer()
+
+# Configurar parámetros SMC más sensibles para mejor detección de tendencias
+print("🔧 Configurando parámetros SMC...")
+signal_visualizer.strategy_lib.market_analysis.swing_length = 3  # Reducir de 5 a 3
+signal_visualizer.strategy_lib.market_analysis.lookback = 10     # Reducir de 20 a 10
+print(f"   📊 Swing length: {signal_visualizer.strategy_lib.market_analysis.swing_length}")
+print(f"   📊 Lookback period: {signal_visualizer.strategy_lib.market_analysis.lookback}")
+
+# DICCIONARIO GLOBAL para mantener CONTINUIDAD TEMPORAL de tendencias
+# Cada vela mantiene su tendencia histórica
+global_trend_history = {}
+
 print("🔍 Calculando señales de trading...")
 try:
     trading_signals = signal_visualizer.calculate_signals(df_5m)
@@ -898,32 +965,109 @@ if os.path.exists(frames_dir):
     shutil.rmtree(frames_dir)
 os.makedirs(frames_dir)
 
-window = 100
-# Calcular posición de inicio para generar solo los últimos 20 frames
-total_frames_to_generate = 20
-# Corregir: start_pos debe ser menor que len(df_5m) y mayor o igual que window
-start_pos = max(window, len(df_5m) - total_frames_to_generate)
+window = 100  # Ventana de visualización (últimas 100 velas)
+# Generar frames desde la vela 100 en adelante para tener más PNGs
+total_frames_to_generate = len(df_5m) - window  # Generar desde vela 100 hasta el final
+# Iniciar desde la vela 100 (window)
+start_pos = window
 
-print(f"🎬 Generando ÚLTIMOS {total_frames_to_generate} frames PNG desde vela {start_pos} hasta {len(df_5m)}")
-print(f"📊 Esto mostrará las últimas {total_frames_to_generate} posiciones del análisis")
-print(f"🔍 Verificando cálculos de tendencia de 5M...")
+print(f"🎬 Generando frames PNG desde vela {start_pos} hasta {len(df_5m)}")
+print(f"📊 Total de frames a generar: {total_frames_to_generate}")
+print(f"🔍 Ventana de visualización: {window} velas por frame")
+print(f"🔍 Datos totales disponibles: {len(df_5m)} velas para análisis SMC")
+print(f"🔍 Análisis extendido: {window + 50} velas para indicadores técnicos")
+print(f"🔍 Verificando cálculos de tendencia de 5M usando estructura completa...")
 
 print(f"🔄 Iniciando generación de frames...")
 print(f"   📊 Posiciones a procesar: {start_pos} a {len(df_5m)}")
-print(f"   ⏰ Total de frames: {len(df_5m) - start_pos}")
+print(f"   ⏰ Total de frames: {total_frames_to_generate}")
+print(f"   🔍 Cada frame analiza {len(df_5m)} velas pero visualiza solo {window} velas")
 
 for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     print(f"\n🎬 Procesando frame {pos}/{len(df_5m)}...")
+    
+    # Calcular la ventana de análisis extendida para indicadores
+    # Necesitamos al menos 50 velas antes para RSI y MACD
+    analysis_start = max(0, pos - window - 50)  # 50 velas adicionales para análisis
+    analysis_df = df_5m.iloc[analysis_start : pos]  # Datos para calcular indicadores
+    
+    # Ventana de visualización (últimas 100 velas)
     window_df = df_5m.iloc[pos - window : pos]
     
-    # Calcular indicadores básicos para esta ventana
-    macd_line, signal_line, histogram = calculate_macd(window_df)
-    rsi = calculate_rsi(window_df)
+    # Calcular indicadores básicos con datos extendidos
+    if len(analysis_df) >= 26:  # Mínimo para MACD (26 períodos) + RSI (14 períodos)
+        macd_line, signal_line, histogram = calculate_macd(analysis_df)
+        rsi = calculate_rsi(analysis_df)
+        
+        # Tomar solo la parte correspondiente a la ventana de visualización
+        macd_line = macd_line.tail(len(window_df))
+        signal_line = signal_line.tail(len(window_df))
+        histogram = histogram.tail(len(window_df))
+        rsi = rsi.tail(len(window_df))
+        
+        print(f"   📊 Análisis: {len(analysis_df)} velas, Visualización: {len(window_df)} velas")
+    else:
+        # Si no hay suficientes datos, crear indicadores básicos
+        macd_line = pd.Series([0] * len(window_df), index=window_df.index)
+        signal_line = pd.Series([0] * len(window_df), index=window_df.index)
+        histogram = pd.Series([0] * len(window_df), index=window_df.index)
+        rsi = pd.Series([50] * len(window_df), index=window_df.index)
     
-    # Crear tendencia simple para 5M (simulada)
-    # En un caso real, esto vendría de tu análisis SMC
-    trend_values = np.random.choice([-1, 0, 1], size=len(window_df), p=[0.3, 0.4, 0.3])
+    # Calcular tendencia usando Smart Money Concepts (SMC) - Estructura del mercado
+    # Usar la función detect_trend del market_analysis_lib con método 'structural'
+    if len(df_5m) >= 20:  # Necesitamos suficientes datos para identificar estructura
+        try:
+            # Usar TODAS las 500 velas para análisis SMC, no solo la ventana de 100
+            market_analysis = signal_visualizer.strategy_lib.market_analysis
+            trend_result = market_analysis.detect_trend(df_5m, method='structural')
+            
+            # Obtener el valor de tendencia actual (última vela de las 500)
+            current_trend = trend_result['trend'].iloc[-1]
+            current_strength = trend_result['strength'].iloc[-1]
+            current_confidence = trend_result['confidence'].iloc[-1]
+            
+            # Convertir a valores -1, 0, 1
+            if current_trend > 0.5:
+                base_trend = 1  # Alcista
+            elif current_trend < -0.5:
+                base_trend = -1  # Bajista
+            else:
+                base_trend = 0  # Lateral
+            
+            confidence = current_confidence / 100.0  # Normalizar a 0-1
+            
+            print(f"   🔍 SMC detectó: Tendencia={base_trend}, Fuerza={current_strength}, Confianza={current_confidence:.1f}%")
+            print(f"   📊 Analizando 500 velas con método 'structural' (HH+HL, LL+LH, BOS, CHoCH)")
+            
+        except Exception as e:
+            print(f"   ⚠️ Error en SMC, usando análisis simple: {e}")
+            # Fallback a análisis simple si SMC falla
+            base_trend = analyze_simple_price_trend(window_df)
+            confidence = 0.4
+    else:
+        base_trend = 0
+        confidence = 0.2
+    
+    # Crear tendencia con CONTINUIDAD TEMPORAL usando diccionario global
+    # Cada vela mantiene su tendencia histórica, solo la nueva vela puede cambiar
+    
+    trend_values = []
+    
+    # Generar tendencia para cada vela en la ventana actual
+    for i, candle_index in enumerate(window_df.index):
+        if candle_index in global_trend_history:
+            # Vela ya analizada: mantener tendencia histórica
+            trend_values.append(global_trend_history[candle_index])
+        else:
+            # Nueva vela: asignar tendencia actual y guardar en historial
+            global_trend_history[candle_index] = base_trend
+            trend_values.append(base_trend)
+    
     trend_data = pd.DataFrame({'trend': trend_values}, index=window_df.index)
+    
+    # Debug: mostrar continuidad temporal
+    print(f"   🔄 Continuidad temporal: {len([v for v in trend_values if v == base_trend])}/{len(trend_values)} velas con tendencia {base_trend}")
+    print(f"   📊 Historial global: {len(global_trend_history)} velas analizadas")
     
     # Crear subplots: Candlesticks (50%), Tendencia (17%), MACD (17%), RSI (16%)
     fig = sp.make_subplots(
@@ -1213,16 +1357,18 @@ print(f"\n🔍 RESUMEN DEL ANÁLISIS SIMPLIFICADO:")
 print(f"   📅 Frames analizados: {start_pos} a {len(df_5m)} (últimos {len(df_5m) - start_pos} frames)")
 print(f"   ⏰ Ventana de análisis: {window} velas por frame")
 print(f"   📊 Temporalidad procesada:")
-print(f"      • 5M: Últimas 300 velas del CSV (datos principales)")
+print(f"      • 5M: Últimas 500 velas del CSV (datos para análisis SMC)")
+print(f"      • Visualización: Últimas 100 velas por frame")
 print(f"   🎯 Cada frame incluye:")
 print(f"      • Candlesticks principales con indicadores SMC")
 print(f"      • Panel de tendencia de 5M independiente")
 print(f"      • MACD y RSI en paneles separados")
 print(f"      • Señales de trading con niveles de confianza")
-print(f"   📈 Lógica simplificada:")
-print(f"      • Solo análisis de 5M para mayor simplicidad y velocidad")
-print(f"      • Tendencia en panel dedicado del mismo tamaño que MACD/RSI")
+print(f"   📈 Lógica SMC implementada:")
+print(f"      • Análisis de 5M usando market_analysis_lib.detect_trend('structural')")
+print(f"      • Tendencia basada en swing highs/lows, BOS, y estructura del mercado")
 print(f"      • Indicadores técnicos estándar (MACD, RSI)")
+print(f"      • Fallback a análisis simple si SMC falla")
 
 
 # Mostrar detalles de las señales

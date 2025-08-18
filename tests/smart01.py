@@ -338,14 +338,82 @@ def analyze_simple_price_trend(window_df):
     else:
         return 0  # Lateral
 
+def calculate_15m_trend(df_5m, window_df):
+    """
+    Calcular tendencia de 15M resampleando datos de 5M y aplicando análisis SMC
+    """
+    try:
+        # Convertir el índice a datetime para poder hacer resampleo
+        df_5m_copy = df_5m.copy()
+        df_5m_copy.index = pd.to_datetime(df_5m_copy.index)
+        
+        # Resamplear datos de 5M a 15M para análisis
+        df_15m = df_5m_copy.resample('15min').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        if len(df_15m) < 10:  # Necesitamos suficientes velas 15M
+            return 0, pd.Series([0] * len(window_df), index=window_df.index)
+        
+        # Usar análisis SMC para 15M
+        market_analysis = signal_visualizer.strategy_lib.market_analysis
+        trend_result_15m = market_analysis.detect_trend(df_15m, method='structural')
+        
+        # Obtener tendencia actual de 15M
+        current_trend_15m = trend_result_15m['trend'].iloc[-1]
+        
+        # Convertir a valores -1, 0, 1
+        if current_trend_15m > 0.5:
+            base_trend_15m = 1  # Alcista
+        elif current_trend_15m < -0.5:
+            base_trend_15m = -1  # Bajista
+        else:
+            base_trend_15m = 0  # Lateral
+        
+        # Crear serie de tendencia 15M para la ventana de visualización
+        # APLICAR CONTINUIDAD TEMPORAL usando diccionario global
+        trend_15m_values = []
+        
+        for i, candle_index in enumerate(window_df.index):
+            if candle_index in global_trend_15m_history:
+                # Vela ya analizada: mantener tendencia histórica
+                trend_15m_values.append(global_trend_15m_history[candle_index])
+            else:
+                # Nueva vela: asignar tendencia actual y guardar en historial
+                global_trend_15m_history[candle_index] = base_trend_15m
+                trend_15m_values.append(base_trend_15m)
+        
+        trend_15m_series = pd.Series(trend_15m_values, index=window_df.index)
+        
+        print(f"   🔍 15M SMC detectó: Tendencia={base_trend_15m}")
+        
+        # Debug: mostrar continuidad temporal de 15M
+        print(f"   🔄 15M Continuidad temporal: {len([v for v in trend_15m_values if v == base_trend_15m])}/{len(trend_15m_values)} velas con tendencia {base_trend_15m}")
+        print(f"   📊 15M Historial global: {len(global_trend_15m_history)} velas analizadas")
+        
+        return base_trend_15m, trend_15m_series
+        
+    except Exception as e:
+        print(f"   ⚠️ Error en análisis 15M: {e}")
+        # Fallback: crear tendencia simple
+        fallback_trend = analyze_simple_price_trend(window_df)
+        fallback_series = pd.Series([fallback_trend] * len(window_df), index=window_df.index)
+        return fallback_trend, fallback_series
+
 def add_trend_indicator(fig, df, trend_data, window_df):
     """
     Agregar indicador de tendencia de 5M en su propio panel
     """
     # Obtener la ventana de tendencia para el gráfico
-    trend_window = trend_data['trend'].iloc[-len(window_df):]
+    # trend_data ya tiene exactamente len(window_df) filas, no necesitamos slice
+    trend_window = trend_data['trend']
     
     if len(trend_window) == 0 or trend_window.isna().all():
+        print(f"   ⚠️ add_trend_indicator: trend_window vacío o NaN")
         return fig
     
     # Agregar líneas de referencia para la tendencia (primero para que estén detrás)
@@ -398,6 +466,70 @@ def add_trend_indicator(fig, df, trend_data, window_df):
         bordercolor=trend_color,
         borderwidth=1,
         row=2, col=1
+    )
+    
+    return fig
+
+def add_trend_15m_indicator(fig, df, trend_15m_data, window_df):
+    """
+    Agregar indicador de tendencia de 15M en su propio panel
+    """
+    # Obtener la ventana de tendencia 15M para el gráfico
+    trend_15m_window = trend_15m_data.iloc[-len(window_df):]
+    
+    if len(trend_15m_window) == 0 or trend_15m_window.isna().all():
+        return fig
+    
+    # Agregar líneas de referencia para la tendencia 15M (primero para que estén detrás)
+    fig.add_hline(y=1, line_dash="dash", line_color="lime", row=3, col=1)  # Alcista
+    fig.add_hline(y=0, line_dash="solid", line_color="gray", row=3, col=1)  # Lateral
+    fig.add_hline(y=-1, line_dash="dash", line_color="red", row=3, col=1)   # Bajista
+    
+    # Agregar línea de tendencia de 15M en el panel de tendencia 15M (row=3)
+    fig.add_trace(
+        go.Scatter(
+            x=window_df.index,
+            y=trend_15m_window,
+            mode='lines',
+            name='Tendencia 15M',
+            line=dict(color='magenta', width=3, dash='solid'),  # Color diferente al 5M
+            showlegend=False,
+            connectgaps=True,  # Conectar puntos faltantes para línea continua
+            opacity=0.9  # Asegurar que sea visible
+        ),
+        row=3, col=1
+    )
+    
+    # Agregar anotación del valor actual de tendencia 15M
+    current_trend_15m = trend_15m_window.iloc[-1]
+    
+    # Determinar el tipo de tendencia basado en el valor
+    if current_trend_15m > 0.3:
+        trend_type_15m = "ALCISTA"
+        trend_color_15m = "lime"
+    elif current_trend_15m < -0.3:
+        trend_type_15m = "BAJISTA"
+        trend_color_15m = "red"
+    else:
+        trend_type_15m = "LATERAL"
+        trend_color_15m = "gray"
+    
+    trend_text_15m = f"{trend_type_15m}<br>{current_trend_15m:.2f}"
+    
+    fig.add_annotation(
+        x=window_df.index[-1],
+        y=current_trend_15m,
+        text=trend_text_15m,
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=1,
+        arrowwidth=2,
+        arrowcolor=trend_color_15m,
+        font=dict(size=10, color=trend_color_15m),
+        bgcolor="rgba(0,0,0,0.8)",
+        bordercolor=trend_color_15m,
+        borderwidth=1,
+        row=3, col=1
     )
     
     return fig
@@ -945,6 +1077,12 @@ signal_visualizer.strategy_lib.market_analysis.swing_length = 3  # Reducir de 5 
 signal_visualizer.strategy_lib.market_analysis.lookback = 10     # Reducir de 20 a 10
 print(f"   📊 Swing length: {signal_visualizer.strategy_lib.market_analysis.swing_length}")
 print(f"   📊 Lookback period: {signal_visualizer.strategy_lib.market_analysis.lookback}")
+
+# DICCIONARIOS GLOBALES para mantener CONTINUIDAD TEMPORAL de tendencias
+# Cada vela mantiene su tendencia histórica
+global_trend_history = {}
+global_trend_15m_history = {}
+
 print("🔍 Calculando señales de trading...")
 try:
     trading_signals = signal_visualizer.calculate_signals(df_5m)
@@ -961,21 +1099,21 @@ if os.path.exists(frames_dir):
 os.makedirs(frames_dir)
 
 window = 100  # Ventana de visualización (últimas 100 velas)
-# Calcular posición de inicio para generar solo los últimos 20 frames
-total_frames_to_generate = 20
-# Corregir: start_pos debe ser menor que len(df_5m) y mayor o igual que window
-start_pos = max(window, len(df_5m) - total_frames_to_generate)
+# Generar frames desde la vela 100 en adelante para tener más PNGs
+total_frames_to_generate = len(df_5m) - window  # Generar desde vela 100 hasta el final
+# Iniciar desde la vela 100 (window)
+start_pos = window
 
-print(f"🎬 Generando ÚLTIMOS {total_frames_to_generate} frames PNG desde vela {start_pos} hasta {len(df_5m)}")
-print(f"📊 Esto mostrará las últimas {total_frames_to_generate} posiciones del análisis")
-print(f"🔍 Ventana de visualización: {window} velas (últimas 100)")
+print(f"🎬 Generando frames PNG desde vela {start_pos} hasta {len(df_5m)}")
+print(f"📊 Total de frames a generar: {total_frames_to_generate}")
+print(f"🔍 Ventana de visualización: {window} velas por frame")
 print(f"🔍 Datos totales disponibles: {len(df_5m)} velas para análisis SMC")
 print(f"🔍 Análisis extendido: {window + 50} velas para indicadores técnicos")
 print(f"🔍 Verificando cálculos de tendencia de 5M usando estructura completa...")
 
 print(f"🔄 Iniciando generación de frames...")
 print(f"   📊 Posiciones a procesar: {start_pos} a {len(df_5m)}")
-print(f"   ⏰ Total de frames: {len(df_5m) - start_pos}")
+print(f"   ⏰ Total de frames: {total_frames_to_generate}")
 print(f"   🔍 Cada frame analiza {len(df_5m)} velas pero visualiza solo {window} velas")
 
 for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
@@ -1018,8 +1156,8 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             
             # Obtener el valor de tendencia actual (última vela de las 500)
             current_trend = trend_result['trend'].iloc[-1]
-            current_strength = trend_result['strength'].iloc[-1]
-            current_confidence = trend_result['confidence'].iloc[-1]
+            # Las columnas 'strength' y 'confidence' ya no existen en la nueva versión
+            # Solo tenemos 'trend' con valores -1, 0, 1
             
             # Convertir a valores -1, 0, 1
             if current_trend > 0.5:
@@ -1029,9 +1167,9 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             else:
                 base_trend = 0  # Lateral
             
-            confidence = current_confidence / 100.0  # Normalizar a 0-1
+            confidence = 0.8  # Valor fijo de confianza ya que no tenemos la columna
             
-            print(f"   🔍 SMC detectó: Tendencia={base_trend}, Fuerza={current_strength}, Confianza={current_confidence:.1f}%")
+            print(f"   🔍 SMC detectó: Tendencia={base_trend}, Confianza={confidence:.1f}")
             print(f"   📊 Analizando 500 velas con método 'structural' (HH+HL, LL+LH, BOS, CHoCH)")
             
         except Exception as e:
@@ -1043,34 +1181,39 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         base_trend = 0
         confidence = 0.2
     
-    # Crear tendencia basada en la estructura SMC identificada
+    # Crear tendencia con CONTINUIDAD TEMPORAL usando diccionario global
+    # Cada vela mantiene su tendencia histórica, solo la nueva vela puede cambiar
+    
     trend_values = []
-    for i in range(len(window_df)):
-        # La tendencia base se mantiene, con pequeñas variaciones para suavizar
-        if i < len(window_df) * 0.7:  # En el 70% inicial, mantener tendencia base
-            trend_value = base_trend
-        else:  # En el 30% final, permitir transiciones suaves
-            # Simular transiciones basadas en la estructura del mercado
-            if base_trend == 1:  # Tendencia alcista
-                trend_value = 1 - (0.15 * np.sin(i * 0.2))  # Variación entre 0.85 y 1.15
-            elif base_trend == -1:  # Tendencia bajista
-                trend_value = -1 + (0.15 * np.sin(i * 0.2))  # Variación entre -1.15 y -0.85
-            else:  # Lateral
-                trend_value = 0.1 * np.sin(i * 0.15)  # Variación entre -0.1 y +0.1
-        
-        # Mantener dentro del rango [-1, 1]
-        trend_value = max(-1, min(1, trend_value))
-        trend_values.append(trend_value)
+    
+    # Generar tendencia para cada vela en la ventana actual
+    for i, candle_index in enumerate(window_df.index):
+        if candle_index in global_trend_history:
+            # Vela ya analizada: mantener tendencia histórica
+            trend_values.append(global_trend_history[candle_index])
+        else:
+            # Nueva vela: asignar tendencia actual y guardar en historial
+            global_trend_history[candle_index] = base_trend
+            trend_values.append(base_trend)
     
     trend_data = pd.DataFrame({'trend': trend_values}, index=window_df.index)
     
-    # Crear subplots: Candlesticks (50%), Tendencia (17%), MACD (17%), RSI (16%)
+    # Debug: mostrar continuidad temporal
+    print(f"   🔄 Continuidad temporal: {len([v for v in trend_values if v == base_trend])}/{len(trend_values)} velas con tendencia {base_trend}")
+    print(f"   📊 Historial global: {len(global_trend_history)} velas analizadas")
+    print(f"   🔍 Debug trend_data: shape={trend_data.shape}, valores={trend_data['trend'].tolist()[:5]}...")
+    
+    # Calcular tendencia de 15M
+    print(f"   🔍 Calculando tendencia de 15M...")
+    base_trend_15m, trend_15m_data = calculate_15m_trend(df_5m, window_df)
+    
+    # Crear subplots: Candlesticks (40%), Tendencia 5M (15%), Tendencia 15M (15%), MACD (15%), RSI (15%)
     fig = sp.make_subplots(
-        rows=4, cols=1,
+        rows=5, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.08,
-        row_heights=[0.50, 0.17, 0.17, 0.16],
-        subplot_titles=('', 'TENDENCIA 5M', 'MACD', 'RSI')
+        vertical_spacing=0.06,
+        row_heights=[0.40, 0.15, 0.15, 0.15, 0.15],
+        subplot_titles=('', 'TENDENCIA 5M', 'TENDENCIA 15M', 'MACD', 'RSI')
     )
     
     # 1. GRÁFICO PRINCIPAL - CANDLESTICKS
@@ -1090,6 +1233,9 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
 
     # Agregar tendencia de 5M en el gráfico principal
     add_trend_indicator(fig, window_df, trend_data, window_df)
+    
+    # Agregar tendencia de 15M en su panel
+    add_trend_15m_indicator(fig, window_df, trend_15m_data, window_df)
     
     # Agregar indicadores SMC al gráfico principal
     # Crear datos simulados para los indicadores SMC (en un caso real vendrían de tu análisis)
@@ -1203,7 +1349,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     
     # 2. GRÁFICO TENDENCIA 5M (ya se dibuja en add_trend_indicator)
     
-    # 3. GRÁFICO MACD
+    # 4. GRÁFICO MACD
     fig.add_trace(
         go.Scatter(
             x=window_df.index,
@@ -1213,7 +1359,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             line=dict(color='teal', width=1),
             showlegend=False
         ),
-        row=3, col=1
+        row=4, col=1
     )
     
     fig.add_trace(
@@ -1225,7 +1371,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             line=dict(color='orange', width=1),
             showlegend=False
         ),
-        row=3, col=1
+        row=4, col=1
     )
     
     # Histograma MACD
@@ -1238,13 +1384,13 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             marker_color=colors,
             showlegend=False
         ),
-        row=3, col=1
+        row=4, col=1
     )
     
     # Línea cero en MACD
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", row=3, col=1)
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", row=4, col=1)
     
-    # 4. GRÁFICO RSI
+    # 5. GRÁFICO RSI
     fig.add_trace(
         go.Scatter(
             x=window_df.index,
@@ -1254,13 +1400,13 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             line=dict(color='yellow', width=2),
             showlegend=False
         ),
-        row=4, col=1
+        row=5, col=1
     )
     
     # Líneas de referencia RSI
-    fig.add_hline(y=50, line_dash="solid", line_color="gray", row=4, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=4, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="red", row=4, col=1)
+    fig.add_hline(y=50, line_dash="solid", line_color="gray", row=5, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=5, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="red", row=5, col=1)
 
     # Configurar layout
     fig.update_layout(
@@ -1271,7 +1417,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         paper_bgcolor="rgba(12, 14, 18, 1)",
         font=dict(color="white"),
         width=800,
-        height=800  # Aumentar altura para 4 subplots
+        height=1000  # Aumentar altura para 5 subplots
     )
     
     # Configurar ejes
@@ -1287,7 +1433,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     )
     fig.update_yaxes(visible=False, showticklabels=False, row=1, col=1)
     
-    # Configurar ejes Tendencia
+    # Configurar ejes Tendencia 5M
     fig.update_xaxes(
         title_text="", 
         row=2, col=1,
@@ -1299,7 +1445,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     )
     fig.update_yaxes(title_text="TENDENCIA 5M", range=[-1.5, 1.5], row=2, col=1)
     
-    # Configurar ejes MACD
+    # Configurar ejes Tendencia 15M
     fig.update_xaxes(
         title_text="", 
         row=3, col=1,
@@ -1309,9 +1455,9 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         tickmode='auto',
         nticks=6
     )
-    fig.update_yaxes(title_text="MACD", row=3, col=1)
+    fig.update_yaxes(title_text="TENDENCIA 15M", range=[-1.5, 1.5], row=3, col=1)
     
-    # Configurar ejes RSI
+    # Configurar ejes MACD
     fig.update_xaxes(
         title_text="", 
         row=4, col=1,
@@ -1321,18 +1467,32 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         tickmode='auto',
         nticks=6
     )
-    fig.update_yaxes(title_text="RSI", range=[0, 100], row=4, col=1)
+    fig.update_yaxes(title_text="MACD", row=4, col=1)
+    
+    # Configurar ejes RSI
+    fig.update_xaxes(
+        title_text="", 
+        row=5, col=1,
+        tickformat="%d/%m %H:%M",
+        tickangle=45,
+        tickfont=dict(size=9, color="white"),
+        tickmode='auto',
+        nticks=6
+    )
+    fig.update_yaxes(title_text="RSI", range=[0, 100], row=5, col=1)
     
     # Guardar frame como PNG
     try:
         frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
-        fig.write_image(frame_filename, width=800, height=800)
+        fig.write_image(frame_filename, width=800, height=1000)
         
         # Mostrar información consolidada del frame
         current_trend = trend_data['trend'].iloc[-1] if len(trend_data) > 0 else 0
+        current_trend_15m = trend_15m_data.iloc[-1] if len(trend_15m_data) > 0 else 0
         print(f"✅ Frame {pos} guardado: {frame_filename}")
         print(f"   📊 Resumen del frame:")
         print(f"      • 5M: Tendencia: {current_trend:.2f}")
+        print(f"      • 15M: Tendencia: {current_trend_15m:.2f}")
         
         print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
         
@@ -1341,7 +1501,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         print(f"   🔄 Continuando con el siguiente frame...")
 
 end_time = datetime.datetime.now()
-print(f"✅ Frames PNG con CANDLESTICKS, TENDENCIA 5M, MACD, RSI y SEÑALES DE TRADING guardados en: {frames_dir}/")
+print(f"✅ Frames PNG con CANDLESTICKS, TENDENCIA 5M, TENDENCIA 15M, MACD, RSI y SEÑALES DE TRADING guardados en: {frames_dir}/")
 print(f"📊 Total de frames generados: {len(df_5m) - start_pos}")
 print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
 print(f"⏱️ Tiempo total de ejecución: {end_time - start_time}")
@@ -1357,6 +1517,7 @@ print(f"      • Visualización: Últimas 100 velas por frame")
 print(f"   🎯 Cada frame incluye:")
 print(f"      • Candlesticks principales con indicadores SMC")
 print(f"      • Panel de tendencia de 5M independiente")
+print(f"      • Panel de tendencia de 15M independiente")
 print(f"      • MACD y RSI en paneles separados")
 print(f"      • Señales de trading con niveles de confianza")
 print(f"   📈 Lógica SMC implementada:")

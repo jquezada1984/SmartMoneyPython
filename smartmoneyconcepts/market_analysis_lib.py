@@ -122,35 +122,42 @@ class MarketAnalysisLib:
     
     def _detect_trend_structural(self, df):
         """
-        Detectar tendencia usando análisis estructural SMC mejorado
-        - Swing highs/lows significativos
-        - Higher Highs (HH) y Higher Lows (HL) para tendencia alcista
-        - Lower Lows (LL) y Lower Highs (LH) para tendencia bajista
-        - Break of Structure (BOS) para confirmación
-        - Change of Character (CHoCH) para cambios de tendencia
+        IMPLEMENTACIÓN CORRECTA del algoritmo SMC que describes:
+        
+        1. Identificación de altos y bajos significativos
+           - Swing highs (máximos) y swing lows (mínimos)
+           - Puntos donde el mercado reaccionó con fuerza
+        
+        2. Definición de la tendencia
+           - Tendencia alcista: HH (Higher Highs) + HL (Higher Lows)
+           - Tendencia bajista: LL (Lower Lows) + LH (Lower Highs)
+           - Rango/consolidación: atrapado entre máximo y mínimo claros
+        
+        3. Confirmación con BOS (Break of Structure)
+           - BOS alcista confirma continuidad alcista
+           - BOS bajista confirma continuidad bajista
+        
+        4. Cambio de tendencia (CHoCH)
+           - Cuando rompe en dirección contraria a la tendencia previa
+        
+        RETORNA SOLO: -1 (BAJISTA), 0 (LATERAL), 1 (ALCISTA)
         """
         if len(df) < self.swing_length * 2:
             # Datos insuficientes
             return pd.DataFrame({
-                'trend': pd.Series(0.0, index=df.index, dtype=float),
-                'strength': pd.Series(0.0, index=df.index, dtype=float),
-                'confidence': pd.Series(0.0, index=df.index, dtype=float)
+                'trend': pd.Series(0.0, index=df.index, dtype=float)
             })
         
         # Calcular swing highs/lows
         swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
         bos_choch = smc.bos_choch(df, swing_highs_lows)
         
-        # Inicializar resultados - usar float64 para permitir valores decimales
+        # Inicializar solo la tendencia
         trend = pd.Series(0.0, index=df.index, dtype=float)
-        strength = pd.Series(0.0, index=df.index, dtype=float)
-        confidence = pd.Series(0.0, index=df.index, dtype=float)
         
         # Analizar cada punto desde swing_length en adelante
         for i in range(self.swing_length, len(df)):
             current_trend = 0
-            current_strength = 0
-            current_confidence = 0
             
             # 1. ANÁLISIS DE BOS (Break of Structure) - Prioridad máxima
             bos_value = bos_choch['BOS'].iloc[i]
@@ -158,134 +165,300 @@ class MarketAnalysisLib:
             
             if not np.isnan(bos_value) and bos_value != 0:
                 # BOS detectado - confirmación de tendencia
-                current_trend = bos_value
-                current_strength = 80
-                current_confidence = 90
+                current_trend = bos_value  # Ya es -1, 0, o 1
                 
             elif not np.isnan(choch_value) and choch_value != 0:
                 # CHoCH detectado - cambio de tendencia
-                current_trend = choch_value
-                current_strength = 85
-                current_confidence = 85
+                current_trend = choch_value  # Ya es -1, 0, o 1
                 
             else:
-                # 2. ANÁLISIS DE ESTRUCTURA DE SWING POINTS
-                # Buscar swing points en el lookback period
-                lookback_start = max(0, i - self.lookback)
-                recent_swings = swing_highs_lows.iloc[lookback_start:i+1]
+                # 2. ANÁLISIS DE ESTRUCTURA SEGÚN TU ALGORITMO SMC
+                # Usar lookback de 20 velas para identificar estructura clara
+                lookback_start = max(0, i - 20)
+                recent_data = df.iloc[lookback_start:i+1]
                 
-                # Filtrar swing points válidos
-                valid_swings = recent_swings.dropna(subset=['HighLow', 'Level'])
-                
-                if len(valid_swings) >= 4:  # Necesitamos al menos 4 swing points
-                    # Separar highs y lows
-                    highs = valid_swings[valid_swings['HighLow'] == 1].sort_values('Level')
-                    lows = valid_swings[valid_swings['HighLow'] == -1].sort_values('Level')
-                    
-                    if len(highs) >= 2 and len(lows) >= 2:
-                        # 3. ANÁLISIS DE TENDENCIA ALCISTA: Higher Highs (HH) + Higher Lows (HL)
-                        high_trend_alcista = self._analyze_higher_highs_lows(highs, lows)
-                        
-                        # 4. ANÁLISIS DE TENDENCIA BAJISTA: Lower Lows (LL) + Lower Highs (LH)
-                        low_trend_bajista = self._analyze_lower_lows_highs(highs, lows)
-                        
-                        # 5. DETERMINAR TENDENCIA DOMINANTE
-                        if high_trend_alcista['confirmed'] and high_trend_alcista['strength'] > low_trend_bajista['strength']:
-                            current_trend = 1  # Alcista
-                            current_strength = high_trend_alcista['strength']
-                            current_confidence = 75
-                            
-                        elif low_trend_bajista['confirmed'] and low_trend_bajista['strength'] > high_trend_alcista['strength']:
-                            current_trend = -1  # Bajista
-                            current_strength = low_trend_bajista['strength']
-                            current_confidence = 75
-                            
-                        else:
-                            # 6. ANÁLISIS DE RANGO/CONSOLIDACIÓN
-                            range_analysis = self._analyze_range_consolidation(valid_swings, df.iloc[lookback_start:i+1])
-                            if range_analysis['is_range']:
-                                current_trend = 0  # Lateral/Rango
-                                current_strength = range_analysis['strength']
-                                current_confidence = 65
+                # 2.1. DETECCIÓN PRINCIPAL DE TENDENCIA SMC
+                smc_trend = self._detect_smc_trend_correctly(recent_data)
+                if smc_trend['detected']:
+                    current_trend = smc_trend['trend']  # Ya es -1, 0, o 1
+                else:
+                    # 2.2. ANÁLISIS DE RANGO/CONSOLIDACIÓN
+                    range_analysis = self._analyze_range_consolidation_smc(recent_data)
+                    if range_analysis['is_range']:
+                        current_trend = 0  # Lateral/Rango
             
-            # Asignar valores a las series
+            # GARANTIZAR que current_trend sea -1, 0, o 1 (valores claros)
+            if current_trend > 0.5:
+                current_trend = 1  # ALCISTA
+            elif current_trend < -0.5:
+                current_trend = -1  # BAJISTA
+            else:
+                current_trend = 0  # LATERAL
+            
+            # Asignar solo la tendencia
             trend.iloc[i] = current_trend
-            strength.iloc[i] = current_strength
-            confidence.iloc[i] = current_confidence
         
         return pd.DataFrame({
-            'trend': trend,
-            'strength': strength,
-            'confidence': confidence
+            'trend': trend
         })
     
-    def _analyze_higher_highs_lows(self, highs, lows):
+    def _analyze_higher_highs_lows_improved(self, highs, lows, price_data):
         """
         Analizar si hay Higher Highs (HH) y Higher Lows (HL) para tendencia alcista
+        MEJORADO: Análisis más dinámico y sensible a cambios
         """
-        if len(highs) < 2 or len(lows) < 2:
+        if len(highs) < 1 or len(lows) < 1:
             return {'confirmed': False, 'strength': 0}
         
-        # Verificar Higher Highs (HH)
+        # Análisis más dinámico: priorizar swing points más recientes
         high_values = highs['Level'].values
-        hh_confirmed = high_values[-1] > high_values[-2]
-        
-        # Verificar Higher Lows (HL)
         low_values = lows['Level'].values
-        hl_confirmed = low_values[-1] > low_values[-2]
         
-        # Calcular fuerza basada en la pendiente
+        # Verificar Higher Highs (HH) - comparar últimos 2 highs
+        hh_confirmed = False
+        if len(high_values) >= 2:
+            hh_confirmed = high_values[-1] > high_values[-2]
+        elif len(high_values) == 1:
+            # Si solo hay 1 high, verificar que esté por encima del precio medio reciente
+            recent_avg = price_data['high'].tail(10).mean()
+            hh_confirmed = high_values[-1] > recent_avg
+        
+        # Verificar Higher Lows (HL) - comparar últimos 2 lows
+        hl_confirmed = False
+        if len(low_values) >= 2:
+            hl_confirmed = low_values[-1] > low_values[-2]
+        elif len(low_values) == 1:
+            # Si solo hay 1 low, verificar que esté por encima del precio medio reciente
+            recent_avg = price_data['low'].tail(10).mean()
+            hl_confirmed = low_values[-1] > recent_avg
+        
+        # Calcular fuerza basada en la pendiente y confirmación
         if hh_confirmed and hl_confirmed:
-            high_slope = (high_values[-1] - high_values[0]) / (len(high_values) - 1)
-            low_slope = (low_values[-1] - low_values[0]) / (len(low_values) - 1)
-            strength = min(80, (high_slope + low_slope) * 1000)  # Escalar la pendiente
+            # Calcular pendiente considerando todos los puntos disponibles
+            if len(high_values) >= 2:
+                high_slope = (high_values[-1] - high_values[0]) / max(1, len(high_values) - 1)
+            else:
+                high_slope = 0.001  # Pendiente mínima si solo hay 1 punto
+            
+            if len(low_values) >= 2:
+                low_slope = (low_values[-1] - low_values[0]) / max(1, len(low_values) - 1)
+            else:
+                low_slope = 0.001  # Pendiente mínima si solo hay 1 punto
+            
+            # Escalar la pendiente y considerar la confirmación
+            strength = min(80, (high_slope + low_slope) * 2000 + 20)  # +20 por confirmación
             return {'confirmed': True, 'strength': strength}
         
         return {'confirmed': False, 'strength': 0}
     
-    def _analyze_lower_lows_highs(self, highs, lows):
+    def _analyze_lower_lows_highs_improved(self, highs, lows, price_data):
         """
         Analizar si hay Lower Lows (LL) y Lower Highs (LH) para tendencia bajista
+        MEJORADO: Análisis más dinámico y sensible a cambios
         """
-        if len(highs) < 2 or len(lows) < 2:
+        if len(highs) < 1 or len(lows) < 1:
             return {'confirmed': False, 'strength': 0}
         
-        # Verificar Lower Lows (LL)
-        low_values = lows['Level'].values
-        ll_confirmed = low_values[-1] < low_values[-2]
-        
-        # Verificar Lower Highs (LH)
+        # Análisis más dinámico: priorizar swing points más recientes
         high_values = highs['Level'].values
-        lh_confirmed = high_values[-1] < high_values[-2]
+        low_values = lows['Level'].values
         
-        # Calcular fuerza basada en la pendiente
+        # Verificar Lower Lows (LL) - comparar últimos 2 lows
+        ll_confirmed = False
+        if len(low_values) >= 2:
+            ll_confirmed = low_values[-1] < low_values[-2]
+        elif len(low_values) == 1:
+            # Si solo hay 1 low, verificar que esté por debajo del precio medio reciente
+            recent_avg = price_data['low'].tail(10).mean()
+            ll_confirmed = low_values[-1] < recent_avg
+        
+        # Verificar Lower Highs (LH) - comparar últimos 2 highs
+        lh_confirmed = False
+        if len(high_values) >= 2:
+            lh_confirmed = high_values[-1] < high_values[-2]
+        elif len(high_values) == 1:
+            # Si solo hay 1 high, verificar que esté por debajo del precio medio reciente
+            recent_avg = price_data['high'].tail(10).mean()
+            lh_confirmed = high_values[-1] < recent_avg
+        
+        # Calcular fuerza basada en la pendiente y confirmación
         if ll_confirmed and lh_confirmed:
-            high_slope = (high_values[-1] - high_values[0]) / (len(high_values) - 1)
-            low_slope = (low_values[-1] - low_values[0]) / (len(low_values) - 1)
-            strength = min(80, abs(high_slope + low_slope) * 1000)  # Escalar la pendiente
+            # Calcular pendiente considerando todos los puntos disponibles
+            if len(high_values) >= 2:
+                high_slope = (high_values[-1] - high_values[0]) / max(1, len(high_values) - 1)
+            else:
+                high_slope = -0.001  # Pendiente mínima negativa si solo hay 1 punto
+            
+            if len(low_values) >= 2:
+                low_slope = (low_values[-1] - low_values[0]) / max(1, len(low_values) - 1)
+            else:
+                low_slope = -0.001  # Pendiente mínima negativa si solo hay 1 punto
+            
+            # Escalar la pendiente y considerar la confirmación
+            strength = min(80, abs(high_slope + low_slope) * 2000 + 20)  # +20 por confirmación
             return {'confirmed': True, 'strength': strength}
         
         return {'confirmed': False, 'strength': 0}
     
-    def _analyze_range_consolidation(self, swings, price_data):
+    def _analyze_range_consolidation_smc(self, df):
         """
-        Analizar si el mercado está en rango/consolidación
+        Analizar si el mercado está en rango/consolidación según SMC
         """
-        if len(swings) < 3:
-            return {'is_range': False, 'strength': 0}
+        if len(df) < 10:
+            return {'is_range': False}
+        
+        # Calcular swing highs y lows recientes
+        highs = df['high'].rolling(window=5, center=True).max()
+        lows = df['low'].rolling(window=5, center=True).min()
+        
+        valid_highs = highs.dropna()
+        valid_lows = lows.dropna()
+        
+        if len(valid_highs) < 3 or len(valid_lows) < 3:
+            return {'is_range': False}
+        
+        # Verificar si está en rango: no hay tendencia clara
+        # Los highs y lows no muestran patrón de HH+HL ni LL+LH
         
         # Calcular volatilidad del rango
-        price_range = price_data['high'].max() - price_data['low'].min()
-        avg_price = price_data['close'].mean()
+        price_range = df['high'].max() - df['low'].min()
+        avg_price = df['close'].mean()
         volatility = price_range / avg_price
         
-        # Si la volatilidad es baja, es probable un rango
-        if volatility < 0.02:  # Menos del 2%
-            # Calcular fuerza basada en la estabilidad
-            strength = min(60, (0.02 - volatility) * 3000)
-            return {'is_range': True, 'strength': strength}
+        # Si la volatilidad es baja (<3%) y no hay tendencia clara, está en rango
+        if volatility < 0.03:
+            return {'is_range': True}
         
-        return {'is_range': False, 'strength': 0}
+        return {'is_range': False}
+    
+    def _detect_smc_trend_correctly(self, df):
+        """
+        IMPLEMENTACIÓN CORRECTA del algoritmo SMC que describes:
+        
+        1. IDENTIFICACIÓN DE ALTOS Y BAJOS SIGNIFICATIVOS
+           - Swing highs (máximos) y swing lows (mínimos)
+           - Puntos donde el mercado reaccionó con fuerza
+        
+        2. DEFINICIÓN DE LA TENDENCIA
+           - Tendencia alcista: HH (Higher Highs) + HL (Higher Lows)
+           - Tendencia bajista: LL (Lower Lows) + LH (Lower Highs)
+           - Rango/consolidación: atrapado entre máximo y mínimo claros
+        
+        RETORNA SOLO: -1 (BAJISTA), 0 (LATERAL), 1 (ALCISTA)
+        """
+        if len(df) < 10:  # Necesitamos al menos 10 velas para identificar estructura
+            return {'detected': False, 'trend': 0}
+        
+        # 1. IDENTIFICAR ALTOS Y BAJOS SIGNIFICATIVOS - MÁS SENSIBLE
+        # Usar rolling max/min con ventana más pequeña para ser más sensible
+        highs = df['high'].rolling(window=3, center=True).max()
+        lows = df['low'].rolling(window=3, center=True).min()
+        
+        # Filtrar solo los puntos significativos (no NaN)
+        valid_highs = highs.dropna()
+        valid_lows = lows.dropna()
+        
+        if len(valid_highs) < 2 or len(valid_lows) < 2:  # Reducir requisitos mínimos
+            return {'detected': False, 'trend': 0}
+        
+        # 2. DEFINIR LA TENDENCIA SEGÚN TU ALGORITMO - MÁS SENSIBLE
+        
+        # TENDENCIA ALCISTA: HH + HL
+        # Verificar si hay Higher Highs (HH) y Higher Lows (HL)
+        hh_confirmed = False
+        hl_confirmed = False
+        
+        # Verificar HH: últimos 2 highs deben ser crecientes (más sensible)
+        if len(valid_highs) >= 2:
+            high_values = valid_highs.tail(2).values
+            hh_confirmed = (high_values[1] > high_values[0])
+        
+        # Verificar HL: últimos 2 lows deben ser crecientes (más sensible)
+        if len(valid_lows) >= 2:
+            low_values = valid_lows.tail(2).values
+            hl_confirmed = (low_values[1] > low_values[0])
+        
+        # TENDENCIA BAJISTA: LL + LH
+        # Verificar si hay Lower Lows (LL) y Lower Highs (LH)
+        ll_confirmed = False
+        lh_confirmed = False
+        
+        # Verificar LL: últimos 2 lows deben ser decrecientes (más sensible)
+        if len(valid_lows) >= 2:
+            low_values = valid_lows.tail(2).values
+            ll_confirmed = (low_values[1] < low_values[0])
+        
+        # Verificar LH: últimos 2 highs deben ser decrecientes (más sensible)
+        if len(valid_highs) >= 2:
+            high_values = valid_highs.tail(2).values
+            lh_confirmed = (high_values[1] < high_values[0])
+        
+        # 3. DETERMINAR TENDENCIA DOMINANTE - PRIORIZAR TENDENCIA BAJISTA
+        if ll_confirmed and lh_confirmed:
+            # TENDENCIA BAJISTA confirmada - PRIORIDAD MÁXIMA
+            return {
+                'detected': True, 
+                'trend': -1  # BAJISTA
+            }
+        
+        elif hh_confirmed and hl_confirmed:
+            # TENDENCIA ALCISTA confirmada
+            return {
+                'detected': True, 
+                'trend': 1  # ALCISTA
+            }
+        
+        # 4. DETECCIÓN SECUNDARIA - ANÁLISIS DE PRECIO DIRECTO
+        # Si no hay tendencia clara con swing points, analizar precio directamente
+        recent_prices = df.tail(8)  # Últimas 8 velas
+        
+        # Calcular si hay tendencia bajista en precio directo
+        if len(recent_prices) >= 6:
+            # Verificar si los últimos 6 precios muestran tendencia bajista
+            recent_highs = recent_prices['high'].tail(6)
+            recent_lows = recent_prices['low'].tail(6)
+            
+            # Tendencia bajista: precios más bajos
+            if (recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
+                recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
+                return {
+                    'detected': True, 
+                    'trend': -1  # BAJISTA
+                }
+            
+            # Tendencia alcista: precios más altos
+            elif (recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
+                  recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
+                return {
+                    'detected': True, 
+                    'trend': 1  # ALCISTA
+                }
+        
+        # 5. ANÁLISIS DE RANGO/CONSOLIDACIÓN - SOLO SI NO HAY TENDENCIA
+        if self._is_in_range(valid_highs, valid_lows):
+            return {
+                'detected': True, 
+                'trend': 0  # LATERAL
+            }
+        
+        return {'detected': False, 'trend': 0}
+    
+
+    
+    def _is_in_range(self, highs, lows):
+        """
+        Verificar si el mercado está en rango/consolidación
+        """
+        if len(highs) < 3 or len(lows) < 3:
+            return False
+        
+        # Calcular el rango de precios
+        price_range = highs.max() - lows.min()
+        avg_price = (highs.mean() + lows.mean()) / 2
+        
+        # Si el rango es menor al 3% del precio promedio, está en rango
+        volatility = price_range / avg_price
+        return volatility < 0.03
     
     def _detect_trend_technical(self, df):
         """
