@@ -333,10 +333,10 @@ class MarketAnalysisLib:
     
     def _detect_smc_trend_correctly(self, df):
         """
-        IMPLEMENTACIÓN CORRECTA del algoritmo SMC que describes:
+        IMPLEMENTACIÓN REAL del algoritmo SMC que describes:
         
         1. IDENTIFICACIÓN DE ALTOS Y BAJOS SIGNIFICATIVOS
-           - Swing highs (máximos) y swing lows (mínimos)
+           - Swing highs (máximos) y swing lows (mínimos) REALES
            - Puntos donde el mercado reaccionó con fuerza
         
         2. DEFINICIÓN DE LA TENDENCIA
@@ -344,121 +344,181 @@ class MarketAnalysisLib:
            - Tendencia bajista: LL (Lower Lows) + LH (Lower Highs)
            - Rango/consolidación: atrapado entre máximo y mínimo claros
         
+        3. CONFIRMACIÓN CON BOS Y CHoCH
+           - Break of Structure (BOS) confirma tendencia
+           - Change of Character (CHoCH) indica cambio de tendencia
+        
         RETORNA SOLO: -1 (BAJISTA), 0 (LATERAL), 1 (ALCISTA)
         """
-        if len(df) < 10:  # Necesitamos al menos 10 velas para identificar estructura
+        if len(df) < 20:  # Necesitamos al menos 20 velas para identificar estructura SMC
+            print(f"DEBUG SMC: Datos insuficientes ({len(df)} < 20)")
             return {'detected': False, 'trend': 0}
         
-        # 1. IDENTIFICAR ALTOS Y BAJOS SIGNIFICATIVOS - MÁS SENSIBLE
-        # Usar rolling max/min con ventana más pequeña para ser más sensible
-        highs = df['high'].rolling(window=3, center=True).max()
-        lows = df['low'].rolling(window=3, center=True).min()
-        
-        # Filtrar solo los puntos significativos (no NaN)
-        valid_highs = highs.dropna()
-        valid_lows = lows.dropna()
-        
-        if len(valid_highs) < 2 or len(valid_lows) < 2:  # Reducir requisitos mínimos
+        try:
+            print(f"DEBUG SMC: Analizando {len(df)} velas con swing_length={self.swing_length}")
+            
+            # 1. IDENTIFICAR SWING HIGHS Y LOWS REALES usando la librería SMC
+            swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
+            bos_choch = smc.bos_choch(df, swing_highs_lows)
+            
+            print(f"DEBUG SMC: Swing highs/lows encontrados: {len(swing_highs_lows)}")
+            print(f"DEBUG SMC: BOS/CHoCH encontrados: {len(bos_choch)}")
+            
+            # 2. ANALIZAR BOS Y CHoCH - PRIORIDAD MÁXIMA
+            # Buscar el último BOS o CHoCH en los datos
+            last_bos_idx = None
+            last_choch_idx = None
+            
+            for i in range(len(bos_choch)):
+                if not pd.isna(bos_choch['BOS'].iloc[i]) and bos_choch['BOS'].iloc[i] != 0:
+                    last_bos_idx = i
+                    print(f"DEBUG SMC: BOS detectado en índice {i}: {bos_choch['BOS'].iloc[i]}")
+                if not pd.isna(bos_choch['CHOCH'].iloc[i]) and bos_choch['CHOCH'].iloc[i] != 0:
+                    last_choch_idx = i
+                    print(f"DEBUG SMC: CHoCH detectado en índice {i}: {bos_choch['CHOCH'].iloc[i]}")
+            
+            # 3. DETERMINAR TENDENCIA POR BOS/CHoCH
+            if last_bos_idx is not None:
+                bos_value = bos_choch['BOS'].iloc[last_bos_idx]
+                if bos_value == 1:
+                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada por BOS")
+                    return {'detected': True, 'trend': 1}  # ALCISTA
+                elif bos_value == -1:
+                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada por BOS")
+                    return {'detected': True, 'trend': -1}  # BAJISTA
+            
+            if last_choch_idx is not None:
+                choch_value = bos_choch['CHOCH'].iloc[last_choch_idx]
+                if choch_value == 1:
+                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada por CHoCH")
+                    return {'detected': True, 'trend': 1}  # ALCISTA
+                elif choch_value == -1:
+                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada por CHoCH")
+                    return {'detected': True, 'trend': -1}  # BAJISTA
+            
+            # 4. ANÁLISIS DE ESTRUCTURA SMC REAL (HH+HL, LL+LH)
+            # Obtener solo los swing points válidos (no NaN)
+            valid_swing_highs = swing_highs_lows[swing_highs_lows['HighLow'] == 1].dropna()
+            valid_swing_lows = swing_highs_lows[swing_highs_lows['HighLow'] == -1].dropna()
+            
+            print(f"DEBUG SMC: Swing highs válidos: {len(valid_swing_highs)}")
+            print(f"DEBUG SMC: Swing lows válidos: {len(valid_swing_lows)}")
+            
+            if len(valid_swing_highs) >= 2 and len(valid_swing_lows) >= 2:
+                # Obtener los últimos 2 swing highs y lows
+                last_2_highs = valid_swing_highs.tail(2)
+                last_2_lows = valid_swing_lows.tail(2)
+                
+                print(f"DEBUG SMC: Últimos 2 highs: {last_2_highs['Level'].values}")
+                print(f"DEBUG SMC: Últimos 2 lows: {last_2_lows['Level'].values}")
+                
+                # Verificar Higher Highs (HH)
+                hh_confirmed = False
+                if len(last_2_highs) >= 2:
+                    hh_confirmed = last_2_highs['Level'].iloc[-1] > last_2_highs['Level'].iloc[-2]
+                
+                # Verificar Higher Lows (HL)
+                hl_confirmed = False
+                if len(last_2_lows) >= 2:
+                    hl_confirmed = last_2_lows['Level'].iloc[-1] > last_2_lows['Level'].iloc[-2]
+                
+                # Verificar Lower Lows (LL)
+                ll_confirmed = False
+                if len(last_2_lows) >= 2:
+                    ll_confirmed = last_2_lows['Level'].iloc[-1] < last_2_lows['Level'].iloc[-2]
+                
+                # Verificar Lower Highs (LH)
+                lh_confirmed = False
+                if len(last_2_highs) >= 2:
+                    lh_confirmed = last_2_highs['Level'].iloc[-1] < last_2_highs['Level'].iloc[-2]
+                
+                print(f"DEBUG SMC: HH={hh_confirmed}, HL={hl_confirmed}, LL={ll_confirmed}, LH={lh_confirmed}")
+                
+                # 5. DETERMINAR TENDENCIA DOMINANTE
+                if hh_confirmed and hl_confirmed:
+                    # TENDENCIA ALCISTA confirmada: HH + HL
+                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada: HH + HL")
+                    return {'detected': True, 'trend': 1}
+                
+                elif ll_confirmed and lh_confirmed:
+                    # TENDENCIA BAJISTA confirmada: LL + LH
+                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada: LL + LH")
+                    return {'detected': True, 'trend': -1}
+                
+                elif hh_confirmed or hl_confirmed:
+                    # TENDENCIA ALCISTA parcial
+                    print(f"DEBUG SMC: Tendencia ALCISTA parcial: HH={hh_confirmed}, HL={hl_confirmed}")
+                    return {'detected': True, 'trend': 1}
+                
+                elif ll_confirmed or lh_confirmed:
+                    # TENDENCIA BAJISTA parcial
+                    print(f"DEBUG SMC: Tendencia BAJISTA parcial: LL={ll_confirmed}, LH={lh_confirmed}")
+                    return {'detected': True, 'trend': -1}
+            
+            # 6. ANÁLISIS DE PRECIO DIRECTO como respaldo
+            # Si no hay estructura SMC clara, analizar el movimiento de precios reciente
+            recent_prices = df.tail(10)  # Últimas 10 velas
+            
+            if len(recent_prices) >= 8:
+                # Calcular si hay tendencia en precio directo
+                recent_highs = recent_prices['high'].tail(8)
+                recent_lows = recent_prices['low'].tail(8)
+                
+                # Tendencia alcista: precios más altos
+                if (recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
+                    recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
+                    print(f"DEBUG SMC: Tendencia ALCISTA por precio directo")
+                    return {'detected': True, 'trend': 1}
+                
+                # Tendencia bajista: precios más bajos
+                elif (recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
+                      recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
+                    print(f"DEBUG SMC: Tendencia BAJISTA por precio directo")
+                    return {'detected': True, 'trend': -1}
+            
+            # 7. ANÁLISIS DE RANGO/CONSOLIDACIÓN
+            # Solo si no hay tendencia clara
+            if self._is_in_range_smc(df):
+                print(f"DEBUG SMC: Mercado en RANGO/LATERAL")
+                return {'detected': True, 'trend': 0}  # LATERAL
+            
+            # 8. NO SE PUDO DETERMINAR TENDENCIA
+            print(f"DEBUG SMC: No se pudo determinar tendencia")
             return {'detected': False, 'trend': 0}
-        
-        # 2. DEFINIR LA TENDENCIA SEGÚN TU ALGORITMO - MÁS SENSIBLE
-        
-        # TENDENCIA ALCISTA: HH + HL
-        # Verificar si hay Higher Highs (HH) y Higher Lows (HL)
-        hh_confirmed = False
-        hl_confirmed = False
-        
-        # Verificar HH: últimos 2 highs deben ser crecientes (más sensible)
-        if len(valid_highs) >= 2:
-            high_values = valid_highs.tail(2).values
-            hh_confirmed = (high_values[1] > high_values[0])
-        
-        # Verificar HL: últimos 2 lows deben ser crecientes (más sensible)
-        if len(valid_lows) >= 2:
-            low_values = valid_lows.tail(2).values
-            hl_confirmed = (low_values[1] > low_values[0])
-        
-        # TENDENCIA BAJISTA: LL + LH
-        # Verificar si hay Lower Lows (LL) y Lower Highs (LH)
-        ll_confirmed = False
-        lh_confirmed = False
-        
-        # Verificar LL: últimos 2 lows deben ser decrecientes (más sensible)
-        if len(valid_lows) >= 2:
-            low_values = valid_lows.tail(2).values
-            ll_confirmed = (low_values[1] < low_values[0])
-        
-        # Verificar LH: últimos 2 highs deben ser decrecientes (más sensible)
-        if len(valid_highs) >= 2:
-            high_values = valid_highs.tail(2).values
-            lh_confirmed = (high_values[1] < high_values[0])
-        
-        # 3. DETERMINAR TENDENCIA DOMINANTE - PRIORIZAR TENDENCIA BAJISTA
-        if ll_confirmed and lh_confirmed:
-            # TENDENCIA BAJISTA confirmada - PRIORIDAD MÁXIMA
-            return {
-                'detected': True, 
-                'trend': -1  # BAJISTA
-            }
-        
-        elif hh_confirmed and hl_confirmed:
-            # TENDENCIA ALCISTA confirmada
-            return {
-                'detected': True, 
-                'trend': 1  # ALCISTA
-            }
-        
-        # 4. DETECCIÓN SECUNDARIA - ANÁLISIS DE PRECIO DIRECTO
-        # Si no hay tendencia clara con swing points, analizar precio directamente
-        recent_prices = df.tail(8)  # Últimas 8 velas
-        
-        # Calcular si hay tendencia bajista en precio directo
-        if len(recent_prices) >= 6:
-            # Verificar si los últimos 6 precios muestran tendencia bajista
-            recent_highs = recent_prices['high'].tail(6)
-            recent_lows = recent_prices['low'].tail(6)
             
-            # Tendencia bajista: precios más bajos
-            if (recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
-                recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
-                return {
-                    'detected': True, 
-                    'trend': -1  # BAJISTA
-                }
-            
-            # Tendencia alcista: precios más altos
-            elif (recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
-                  recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
-                return {
-                    'detected': True, 
-                    'trend': 1  # ALCISTA
-                }
-        
-        # 5. ANÁLISIS DE RANGO/CONSOLIDACIÓN - SOLO SI NO HAY TENDENCIA
-        if self._is_in_range(valid_highs, valid_lows):
-            return {
-                'detected': True, 
-                'trend': 0  # LATERAL
-            }
-        
-        return {'detected': False, 'trend': 0}
+        except Exception as e:
+            print(f"Error en análisis SMC: {e}")
+            return {'detected': False, 'trend': 0}
     
-
-    
-    def _is_in_range(self, highs, lows):
+    def _is_in_range_smc(self, df):
         """
-        Verificar si el mercado está en rango/consolidación
+        Verificar si el mercado está en rango/consolidación según SMC
         """
-        if len(highs) < 3 or len(lows) < 3:
+        if len(df) < 15:
             return False
         
-        # Calcular el rango de precios
-        price_range = highs.max() - lows.min()
-        avg_price = (highs.mean() + lows.mean()) / 2
-        
-        # Si el rango es menor al 3% del precio promedio, está en rango
-        volatility = price_range / avg_price
-        return volatility < 0.03
+        try:
+            # Usar swing highs/lows reales para determinar rango
+            swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
+            
+            # Obtener solo los swing points válidos
+            valid_highs = swing_highs_lows[swing_highs_lows['HighLow'] == 1]['Level'].dropna()
+            valid_lows = swing_highs_lows[swing_highs_lows['HighLow'] == -1]['Level'].dropna()
+            
+            if len(valid_highs) < 2 or len(valid_lows) < 2:
+                return False
+            
+            # Calcular el rango de precios usando swing points reales
+            price_range = valid_highs.max() - valid_lows.min()
+            avg_price = (valid_highs.mean() + valid_lows.mean()) / 2
+            
+            # Si el rango es menor al 2% del precio promedio, está en rango
+            volatility = price_range / avg_price
+            return volatility < 0.02
+            
+        except Exception as e:
+            print(f"Error analizando rango SMC: {e}")
+            return False
     
     def _detect_trend_technical(self, df):
         """

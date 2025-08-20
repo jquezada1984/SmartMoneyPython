@@ -14,7 +14,6 @@ import datetime
 
 # Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
 from smartmoneyconcepts.smc import smc
-from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
 
 class TradingSignalVisualizer:
@@ -23,7 +22,6 @@ class TradingSignalVisualizer:
     """
     def __init__(self):
         self.strategy_lib = MomentumSMCStrategyLib()
-        self.market_analysis = MarketAnalysisLib(swing_length=3, lookback=10)
         self.signals = []
         self.entry_points = []
         self.stop_losses = []
@@ -237,46 +235,82 @@ def calculate_rsi(df, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_hybrid_trend(df, timeframe_name, market_analysis_lib):
+def calculate_hybrid_trend(df, timeframe_name, base_df=None, base_timeframe='5m'):
     """
-    Calcular tendencia usando Smart Money Concepts (SMC) desde market_analysis_lib
-    Simplificado para devolver solo -1 (bajista), 0 (lateral), 1 (alcista)
+    Calcular tendencia híbrida combinando SMC con análisis de precios
+    Para timeframes superiores, toma más velas del CSV base para tener suficientes datos
     
     Parámetros:
     df: DataFrame del timeframe actual
     timeframe_name: Nombre del timeframe (ej: '15M', '1H', '4H')
-    market_analysis_lib: Instancia de MarketAnalysisLib
+    base_df: DataFrame completo del timeframe base (5M) para cálculos adicionales
+    base_timeframe: Timeframe base (por defecto '5m')
     """
     try:
-        # Usar la función detect_trend de market_analysis_lib con método 'structural'
-        trend_result = market_analysis_lib.detect_trend(df, method='structural')
+        # 1. Intentar SMC primero
+        market_analysis = signal_visualizer.strategy_lib.market_analysis
+        smc_trend = market_analysis.detect_trend(df, method='structural')
         
-        # Obtener el valor de tendencia actual (última vela)
-        current_trend = trend_result['trend'].iloc[-1]
-        
-        # Convertir a valores claros -1, 0, 1 según especificación del usuario
-        if current_trend > 0.5:
-            final_trend = 1  # ALCISTA
-        elif current_trend < -0.5:
-            final_trend = -1  # BAJISTA
+        # 2. Análisis de precios para confirmar
+        if len(df) >= 20:  # Necesitamos suficientes datos
+            # Calcular medias móviles simples
+            ma_short = df['close'].rolling(window=10).mean()
+            ma_long = df['close'].rolling(window=20).mean()
+            
+            # Calcular cambio de precio en las últimas velas
+            recent_prices = df['close'].tail(5)
+            price_change = recent_prices.iloc[-1] - recent_prices.iloc[0]
+            price_change_pct = (price_change / recent_prices.iloc[0]) * 100
+            
+            # Determinar tendencia por precios
+            if ma_short.iloc[-1] > ma_long.iloc[-1] and price_change > 0:
+                price_trend = 1  # Alcista
+            elif ma_short.iloc[-1] < ma_long.iloc[-1] and price_change < 0:
+                price_trend = -1  # Bajista
+            else:
+                price_trend = 0  # Lateral
+            
+            # Combinar SMC con análisis de precios
+            smc_current = smc_trend['trend'].iloc[-1]
+            smc_strength = smc_trend['strength'].iloc[-1]
+            smc_confidence = smc_trend['confidence'].iloc[-1]
+            
+            # Si SMC no detecta tendencia (fuerza/confianza = 0), usar análisis de precios
+            if smc_strength == 0 and smc_confidence == 0:
+                final_trend = price_trend
+                final_strength = abs(price_change_pct) * 10  # Escalar el cambio de precio
+                final_confidence = 60 if abs(price_change_pct) > 0.05 else 40
+                
+                print(f"DEBUG {timeframe_name}: SMC no detectó tendencia, usando análisis de precios")
+                print(f"   Cambio de precio: {price_change:+.5f} ({price_change_pct:+.2f}%)")
+                print(f"   Tendencia por precios: {price_trend}")
+            else:
+                final_trend = smc_current
+                final_strength = smc_strength
+                final_confidence = smc_confidence
+                print(f"DEBUG {timeframe_name}: Usando tendencia SMC detectada")
+            
+            # Crear DataFrame de tendencia híbrida
+            hybrid_trend = pd.DataFrame({
+                'trend': [final_trend] * len(df),
+                'strength': [final_strength] * len(df),
+                'confidence': [final_confidence] * len(df)
+            }, index=df.index)
+            
+            return hybrid_trend
+            
         else:
-            final_trend = 0  # LATERAL
-        
-        print(f"DEBUG {timeframe_name}: SMC detectó tendencia: {final_trend}")
-        print(f"   📊 Analizando {len(df)} velas con método 'structural' (HH+HL, LL+LH, BOS, CHoCH)")
-        
-        # Crear DataFrame de tendencia simplificado
-        trend_data = pd.DataFrame({
-            'trend': [final_trend] * len(df)
-        }, index=df.index)
-        
-        return trend_data
-        
+            # Si no hay suficientes datos, usar SMC puro
+            print(f"DEBUG {timeframe_name}: Datos insuficientes, usando SMC puro")
+            return smc_trend
+            
     except Exception as e:
-        print(f"Error calculando tendencia SMC para {timeframe_name}: {e}")
+        print(f"Error calculando tendencia híbrida para {timeframe_name}: {e}")
         # Retornar tendencia neutral en caso de error
         neutral_trend = pd.DataFrame({
-            'trend': [0] * len(df)
+            'trend': [0] * len(df),
+            'strength': [0] * len(df),
+            'confidence': [0] * len(df)
         }, index=df.index)
         return neutral_trend
 
@@ -348,8 +382,7 @@ def add_trend_indicator(fig, df, trend_data, window_df):
         trend_type = "LATERAL"
         trend_color = "gray"
     
-    # Solo mostrar el tipo de tendencia, NO el valor numérico
-    trend_text = f"{trend_type}"
+    trend_text = f"{trend_type}<br>{current_trend:.2f}"
     
     fig.add_annotation(
         x=window_df.index[-1],
@@ -360,7 +393,7 @@ def add_trend_indicator(fig, df, trend_data, window_df):
         arrowsize=1,
         arrowwidth=2,
         arrowcolor=trend_color,
-        font=dict(size=12, color=trend_color, weight='bold'),  # Texto más grande y en negrita
+        font=dict(size=10, color=trend_color),
         bgcolor="rgba(0,0,0,0.8)",
         bordercolor=trend_color,
         borderwidth=1,
@@ -981,20 +1014,19 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         rsi = pd.Series([50] * len(window_df), index=window_df.index)
     
     # Calcular tendencia usando Smart Money Concepts (SMC) - Estructura del mercado
-    # CORRECCIÓN: Analizar solo las velas hasta la posición actual del frame
-    # Esto permite que la tendencia cambie dinámicamente según el análisis SMC en tiempo real
-    if pos >= 20:  # Necesitamos suficientes datos para identificar estructura
+    # Usar la función detect_trend del market_analysis_lib con método 'structural'
+    if len(df_5m) >= 20:  # Necesitamos suficientes datos para identificar estructura
         try:
-            # CORRECCIÓN: Usar solo las velas hasta la posición actual del frame
-            # Esto permite que la tendencia cambie dinámicamente
-            current_df = df_5m.iloc[:pos]  # Solo velas hasta la posición actual
+            # Usar TODAS las 500 velas para análisis SMC, no solo la ventana de 100
+            market_analysis = signal_visualizer.strategy_lib.market_analysis
+            trend_result = market_analysis.detect_trend(df_5m, method='structural')
             
-            trend_result = signal_visualizer.market_analysis.detect_trend(current_df, method='structural')
-            
-            # Obtener el valor de tendencia actual (última vela analizada)
+            # Obtener el valor de tendencia actual (última vela de las 500)
             current_trend = trend_result['trend'].iloc[-1]
+            current_strength = trend_result['strength'].iloc[-1]
+            current_confidence = trend_result['confidence'].iloc[-1]
             
-            # Convertir a valores -1, 0, 1 según especificación del usuario
+            # Convertir a valores -1, 0, 1
             if current_trend > 0.5:
                 base_trend = 1  # Alcista
             elif current_trend < -0.5:
@@ -1002,35 +1034,39 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             else:
                 base_trend = 0  # Lateral
             
-            print(f"   🔍 SMC detectó: Tendencia={base_trend}")
-            print(f"   📊 Analizando {len(current_df)} velas hasta posición {pos} con método 'structural'")
-            print(f"   📊 Última vela analizada: {current_df.index[-1]}")
+            confidence = current_confidence / 100.0  # Normalizar a 0-1
+            
+            print(f"   🔍 SMC detectó: Tendencia={base_trend}, Fuerza={current_strength}, Confianza={current_confidence:.1f}%")
+            print(f"   📊 Analizando 500 velas con método 'structural' (HH+HL, LL+LH, BOS, CHoCH)")
             
         except Exception as e:
             print(f"   ⚠️ Error en SMC, usando análisis simple: {e}")
             # Fallback a análisis simple si SMC falla
             base_trend = analyze_simple_price_trend(window_df)
+            confidence = 0.4
     else:
         base_trend = 0
+        confidence = 0.2
     
     # Crear tendencia con CONTINUIDAD TEMPORAL usando diccionario global
     # Cada vela mantiene su tendencia histórica, solo la nueva vela puede cambiar
     
     trend_values = []
     
-    # CORRECCIÓN: Usar la tendencia SMC actual para TODAS las velas del frame
-    # Esto permite que la tendencia cambie dinámicamente según el análisis SMC
+    # Generar tendencia para cada vela en la ventana actual
     for i, candle_index in enumerate(window_df.index):
-        # Asignar la tendencia SMC actual a todas las velas del frame
-        # Esto permite que la tendencia cambie entre frames según el análisis SMC
-        global_trend_history[candle_index] = base_trend
-        trend_values.append(base_trend)
+        if candle_index in global_trend_history:
+            # Vela ya analizada: mantener tendencia histórica
+            trend_values.append(global_trend_history[candle_index])
+        else:
+            # Nueva vela: asignar tendencia actual y guardar en historial
+            global_trend_history[candle_index] = base_trend
+            trend_values.append(base_trend)
     
     trend_data = pd.DataFrame({'trend': trend_values}, index=window_df.index)
     
-    # Debug: mostrar tendencia SMC actual
-    print(f"   🔍 SMC detectó: Tendencia={base_trend}")
-    print(f"   📊 Aplicando tendencia {base_trend} a todas las velas del frame actual")
+    # Debug: mostrar continuidad temporal
+    print(f"   🔄 Continuidad temporal: {len([v for v in trend_values if v == base_trend])}/{len(trend_values)} velas con tendencia {base_trend}")
     print(f"   📊 Historial global: {len(global_trend_history)} velas analizadas")
     
     # Crear subplots: Candlesticks (50%), Tendencia (17%), MACD (17%), RSI (16%)
