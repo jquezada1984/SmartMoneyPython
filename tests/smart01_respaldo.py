@@ -861,26 +861,110 @@ def import_data():
     # Tomar las últimas 500 velas de 15M para tener más contexto
     df_15m = df_15m.tail(500)
     
+    # Para 1 hora: agregar 12 velas de 5M para crear 1 vela de 1H
+    # Tomamos las últimas 6000 velas para tener más contexto (500 velas de 1H)
+    df_extended_1h = df.tail(6000)
+    
+    # Crear DataFrame de 1H agregando cada 12 velas de 5M
+    df_1h = pd.DataFrame()
+    open_prices_1h = []
+    high_prices_1h = []
+    low_prices_1h = []
+    close_prices_1h = []
+    volume_prices_1h = []
+    time_index_1h = []
+    
+    for i in range(0, len(df_extended_1h), 12):
+        if i + 11 < len(df_extended_1h):  # Asegurar que tenemos 12 velas
+            # Open: primera vela del grupo
+            open_prices_1h.append(df_extended_1h['open'].iloc[i])
+            # High: máximo de las 12 velas
+            high_prices_1h.append(df_extended_1h['high'].iloc[i:i+12].max())
+            # Low: mínimo de las 12 velas
+            low_prices_1h.append(df_extended_1h['low'].iloc[i:i+12].min())
+            # Close: última vela del grupo
+            close_prices_1h.append(df_extended_1h['close'].iloc[i+11])
+            # Volume: suma de las 12 velas
+            volume_prices_1h.append(df_extended_1h['volume'].iloc[i:i+12].sum())
+            # Time: tiempo de la primera vela del grupo
+            time_index_1h.append(df_extended_1h.index[i])
+    
+    df_1h['open'] = open_prices_1h
+    df_1h['high'] = high_prices_1h
+    df_1h['low'] = low_prices_1h
+    df_1h['close'] = close_prices_1h
+    df_1h['volume'] = volume_prices_1h
+    df_1h.index = time_index_1h
+    
+    # Tomar las últimas 500 velas de 1H
+    df_1h = df_1h.tail(500)
+    
+    # Para 4 horas: agregar 48 velas de 5M para crear 1 vela de 4H
+    # Tomamos las últimas 24000 velas para tener más contexto (500 velas de 4H)
+    df_extended_4h = df.tail(24000)
+    
+    # Crear DataFrame de 4H agregando cada 48 velas de 5M
+    df_4h = pd.DataFrame()
+    open_prices_4h = []
+    high_prices_4h = []
+    low_prices_4h = []
+    close_prices_4h = []
+    volume_prices_4h = []
+    time_index_4h = []
+    
+    for i in range(0, len(df_extended_4h), 48):
+        if i + 47 < len(df_extended_4h):  # Asegurar que tenemos 48 velas
+            # Open: primera vela del grupo
+            open_prices_4h.append(df_extended_4h['open'].iloc[i])
+            # High: máximo de las 48 velas
+            high_prices_4h.append(df_extended_4h['high'].iloc[i:i+48].max())
+            # Low: mínimo de las 48 velas
+            low_prices_4h.append(df_extended_4h['low'].iloc[i:i+48].min())
+            # Close: última vela del grupo
+            close_prices_4h.append(df_extended_4h['close'].iloc[i+47])
+            # Volume: suma de las 48 velas
+            volume_prices_4h.append(df_extended_4h['volume'].iloc[i:i+48].sum())
+            # Time: tiempo de la primera vela del grupo
+            time_index_4h.append(df_extended_4h.index[i])
+    
+    df_4h['open'] = open_prices_4h
+    df_4h['high'] = high_prices_4h
+    df_4h['low'] = low_prices_4h
+    df_4h['close'] = close_prices_4h
+    df_4h['volume'] = volume_prices_4h
+    df_4h.index = time_index_4h
+    
+    # Tomar las últimas 500 velas de 4H
+    df_4h = df_4h.tail(500)
+    
     print(f"📊 Datos cargados desde: {csv_path}")
     print(f"   📈 Total de velas en CSV: {len(df)}")
     print(f"   📈 Velas seleccionadas para 5M: {len(df_5m)} (últimas 500)")
     print(f"   📈 Velas seleccionadas para 15M: {len(df_15m)} (últimas 500)")
-    print(f"   ⏰ Timeframes: 5 minutos (datos principales) y 15 minutos (agregado)")
+    print(f"   📈 Velas seleccionadas para 1H: {len(df_1h)} (últimas 500)")
+    print(f"   📈 Velas seleccionadas para 4H: {len(df_4h)} (últimas 500)")
+    print(f"   ⏰ Timeframes: 5 minutos (datos principales), 15M, 1H y 4H (agregados)")
     print(f"   📅 Rango 5M: {df_5m.index[0]} a {df_5m.index[-1]}")
     print(f"   📅 Rango 15M: {df_15m.index[0]} a {df_15m.index[-1]}")
-    print(f"   💡 Análisis dual: 5M (visualización) + 15M (tendencia)")
+    print(f"   📅 Rango 1H: {df_1h.index[0]} a {df_1h.index[-1]}")
+    print(f"   📅 Rango 4H: {df_4h.index[0]} a {df_4h.index[-1]}")
+    print(f"   💡 Análisis múltiple: 5M (visualización) + 15M, 1H, 4H (tendencias)")
     
-    return df_5m, df_15m, df  # Retornar datos de 5M, 15M y CSV completo
+    return df_5m, df_15m, df_1h, df_4h, df  # Retornar datos de todos los timeframes y CSV completo
 
 
-df_5m, df_15m, df = import_data()
+df_5m, df_15m, df_1h, df_4h, df = import_data()
 
 start_time = datetime.datetime.now()
 print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"📊 Datos 5M cargados: {len(df_5m)} filas")
 print(f"📊 Datos 15M cargados: {len(df_15m)} filas")
+print(f"📊 Datos 1H cargados: {len(df_1h)} filas")
+print(f"📊 Datos 4H cargados: {len(df_4h)} filas")
 print(f"📅 Rango 5M: {df_5m.index[0]} a {df_5m.index[-1]}")
 print(f"📅 Rango 15M: {df_15m.index[0]} a {df_15m.index[-1]}")
+print(f"📅 Rango 1H: {df_1h.index[0]} a {df_1h.index[-1]}")
+print(f"📅 Rango 4H: {df_4h.index[0]} a {df_4h.index[-1]}")
 print("=" * 80)
 
 # Inicializar visualizador de señales de trading
@@ -924,7 +1008,7 @@ print(f"📊 Total de frames a generar: {total_frames_to_generate}")
 print(f"🔍 Ventana de visualización: {window} velas por frame")
 print(f"🔍 Datos totales disponibles: {len(df_5m)} velas para análisis SMC")
 print(f"🔍 Análisis extendido: {window + 50} velas para indicadores técnicos")
-print(f"🔍 Verificando cálculos de tendencia dual: 5M (visualización) + 15M (tendencia)")
+print(f"🔍 Verificando cálculos de tendencia múltiple: 5M (visualización) + 15M, 1H, 4H (tendencias)")
 
 print(f"🔄 Iniciando generación de frames...")
 print(f"   📊 Posiciones a procesar: {start_pos} a {len(df_5m)}")
@@ -1153,10 +1237,124 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         else:
             trend_type_15m = "15M:NA"
             print(f"   ⚠️ No se pudo mapear tiempo 5M a 15M")
-            
+             
     except Exception as e:
         print(f"   ⚠️ Error calculando tendencia 15M: {e}")
         trend_type_15m = "15M:ERROR"
+     
+    # Calcular tendencia de 1H
+    try:
+        # Encontrar la posición correspondiente en los datos de 1H
+        current_time = window_df.index[-1]
+        # Buscar la vela de 1H más cercana
+        closest_1h_idx = None
+        for i, time_1h in enumerate(df_1h.index):
+            if pd.to_datetime(time_1h) >= pd.to_datetime(current_time):
+                closest_1h_idx = i
+                break
+        
+        if closest_1h_idx is not None and closest_1h_idx < len(df_1h):
+            # Analizar tendencia de 1H usando las velas hasta la posición actual
+            current_df_1h = df_1h.iloc[:closest_1h_idx + 1]
+            if len(current_df_1h) >= 20:
+                trend_result_1h = signal_visualizer.market_analysis.detect_trend(current_df_1h, method='structural')
+                current_trend_1h = trend_result_1h['trend'].iloc[-1]
+                
+                # Determinar el tipo de tendencia de 1H
+                if current_trend_1h > 0.5:
+                    trend_type_1h = "1H:ALCISTA"
+                    trend_color_1h = "blue"
+                elif current_trend_1h < -0.5:
+                    trend_type_1h = "1H:BAJISTA"
+                    trend_color_1h = "purple"
+                else:
+                    trend_type_1h = "1H:LATERAL"
+                    trend_color_1h = "gray"
+                
+                # Agregar anotación de tendencia 1H debajo de la de 15M
+                fig.add_annotation(
+                    x=window_df.index[0],
+                    y=window_df['low'].min(),
+                    text=trend_type_1h,
+                    showarrow=False,
+                    font=dict(size=12, color=trend_color_1h, weight='bold'),
+                    bgcolor="rgba(0,0,0,0.8)",
+                    bordercolor=trend_color_1h,
+                    borderwidth=1,
+                    xanchor="left",
+                    yanchor="bottom",
+                    xshift=10,
+                    yshift=-120
+                )
+                
+                print(f"   🔍 1H detectó: Tendencia={current_trend_1h:.2f} → {trend_type_1h}")
+            else:
+                trend_type_1h = "1H:NA"
+                print(f"   ⚠️ Insuficientes datos para 1H: {len(current_df_1h)} velas")
+        else:
+            trend_type_1h = "1H:NA"
+            print(f"   ⚠️ No se pudo mapear tiempo 5M a 1H")
+            
+    except Exception as e:
+        print(f"   ⚠️ Error calculando tendencia 1H: {e}")
+        trend_type_1h = "1H:ERROR"
+     
+    # Calcular tendencia de 4H
+    try:
+        # Encontrar la posición correspondiente en los datos de 4H
+        current_time = window_df.index[-1]
+        # Buscar la vela de 4H más cercana
+        closest_4h_idx = None
+        for i, time_4h in enumerate(df_4h.index):
+            if pd.to_datetime(time_4h) >= pd.to_datetime(current_time):
+                closest_4h_idx = i
+                break
+        
+        if closest_4h_idx is not None and closest_4h_idx < len(df_4h):
+            # Analizar tendencia de 4H usando las velas hasta la posición actual
+            current_df_4h = df_4h.iloc[:closest_4h_idx + 1]
+            if len(current_df_4h) >= 20:
+                trend_result_4h = signal_visualizer.market_analysis.detect_trend(current_df_4h, method='structural')
+                current_trend_4h = trend_result_4h['trend'].iloc[-1]
+                
+                # Determinar el tipo de tendencia de 4H
+                if current_trend_4h > 0.5:
+                    trend_type_4h = "4H:ALCISTA"
+                    trend_color_4h = "darkblue"
+                elif current_trend_4h < -0.5:
+                    trend_type_4h = "4H:BAJISTA"
+                    trend_color_4h = "darkred"
+                else:
+                    trend_type_4h = "4H:LATERAL"
+                    trend_color_4h = "gray"
+                
+                # Agregar anotación de tendencia 4H debajo de la de 1H
+                fig.add_annotation(
+                    x=window_df.index[0],
+                    y=window_df['low'].min(),
+                    text=trend_type_4h,
+                    showarrow=False,
+                    font=dict(size=12, color=trend_color_4h, weight='bold'),
+                    bgcolor="rgba(0,0,0,0.8)",
+                    bordercolor=trend_color_4h,
+                    borderwidth=1,
+                    xanchor="left",
+                    yanchor="bottom",
+                    xshift=10,
+                    yshift=-140
+                )
+                
+                print(f"   🔍 4H detectó: Tendencia={current_trend_4h:.2f} → {trend_type_4h}")
+            else:
+                trend_type_4h = "4H:NA"
+                print(f"   ⚠️ Insuficientes datos para 4H: {len(current_df_4h)} velas")
+        else:
+            trend_type_4h = "4H:NA"
+            print(f"   ⚠️ No se pudo mapear tiempo 5M a 4H")
+            
+    except Exception as e:
+        print(f"   ⚠️ Error calculando tendencia 4H: {e}")
+        trend_type_4h = "4H:ERROR"
     
     # Agregar indicadores SMC al gráfico principal
     # Crear datos simulados para los indicadores SMC (en un caso real vendrían de tu análisis)
@@ -1387,6 +1585,8 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         print(f"   📊 Resumen del frame:")
         print(f"      • 5M: Tendencia: {current_trend:.2f}")
         print(f"      • 15M: Tendencia: {trend_type_15m if 'trend_type_15m' in locals() else 'N/A'}")
+        print(f"      • 1H: Tendencia: {trend_type_1h if 'trend_type_1h' in locals() else 'N/A'}")
+        print(f"      • 4H: Tendencia: {trend_type_4h if 'trend_type_4h' in locals() else 'N/A'}")
         
         print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
         
@@ -1408,17 +1608,21 @@ print(f"   ⏰ Ventana de análisis: {window} velas por frame")
 print(f"   📊 Temporalidad procesada:")
 print(f"      • 5M: Últimas 500 velas del CSV (datos principales para visualización)")
 print(f"      • 15M: Últimas 500 velas agregadas (datos para análisis de tendencia)")
+print(f"      • 1H: Últimas 500 velas agregadas (datos para análisis de tendencia)")
+print(f"      • 4H: Últimas 500 velas agregadas (datos para análisis de tendencia)")
 print(f"      • Visualización: Últimas 100 velas por frame (5M)")
 print(f"   🎯 Cada frame incluye:")
 print(f"      • Candlesticks principales con indicadores SMC (datos 5M)")
 print(f"      • Tendencia 5M en esquina inferior izquierda")
-print(f"      • Tendencia 15M en esquina inferior derecha")
+print(f"      • Tendencia 15M debajo de 5M")
+print(f"      • Tendencia 1H debajo de 15M")
+print(f"      • Tendencia 4H debajo de 1H")
 print(f"      • MACD y RSI en paneles separados")
 print(f"      • Señales de trading con niveles de confianza")
 print(f"   📈 Lógica SMC implementada:")
-print(f"      • Análisis dual: 5M (visualización) + 15M (tendencia)")
+print(f"      • Análisis múltiple: 5M (visualización) + 15M, 1H, 4H (tendencias)")
 print(f"      • 5M: market_analysis_lib.detect_trend('structural') para estructura")
-print(f"      • 15M: market_analysis_lib.detect_trend('structural') para tendencia")
+print(f"      • 15M, 1H, 4H: market_analysis_lib.detect_trend('structural') para tendencias")
 print(f"      • Indicadores técnicos estándar (MACD, RSI)")
 print(f"      • Fallback a análisis simple si SMC falla")
 

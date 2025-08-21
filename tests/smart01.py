@@ -1284,7 +1284,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     xanchor="left",
                     yanchor="bottom",
                     xshift=10,
-                    yshift=-140
+                    yshift=-120
                 )
                 
                 print(f"   🔍 1H detectó: Tendencia={current_trend_1h:.2f} → {trend_type_1h}")
@@ -1341,7 +1341,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     xanchor="left",
                     yanchor="bottom",
                     xshift=10,
-                    yshift=-180
+                    yshift=-140
                 )
                 
                 print(f"   🔍 4H detectó: Tendencia={current_trend_4h:.2f} → {trend_type_4h}")
