@@ -8,7 +8,7 @@ import collections
 # Agregar el directorio de la librería al path
 strategy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "estrategia")
 sys.path.insert(0, strategy_path)
-from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
+
 
 class MomentumSMCStrategyExample(bt.Strategy):
     """
@@ -52,20 +52,7 @@ class MomentumSMCStrategyExample(bt.Strategy):
         self.data_low = self.datas[0].low
         self.data_volume = self.datas[0].volume
         
-        # Inicializar la librería de estrategias
-        self.strategy_lib = MomentumSMCStrategyLib(
-            swing_length=self.p.swing_length,
-            lookback=self.p.lookback,
-            macd_fast=self.p.macd_fast,
-            macd_slow=self.p.macd_slow,
-            macd_signal=self.p.macd_signal,
-            rsi_period=self.p.rsi_period,
-            ob_lookback=self.p.ob_lookback,
-            fib_min=self.p.fib_min,
-            fib_max=self.p.fib_max,
-            fvg_lookback=self.p.fvg_lookback,
-            fvg_min_size=self.p.fvg_min_size
-        )
+
         
         # Contadores de señales
         self.buy_signal_count = 0
@@ -145,8 +132,7 @@ class MomentumSMCStrategyExample(bt.Strategy):
         if len(df) < self.p.lookback:
             return
             
-        # Usar la librería para calcular señales
-        signals = self.strategy_lib.analyze_all_strategies(df)
+
         
         # Procesar señales de la librería
         for signal in signals:

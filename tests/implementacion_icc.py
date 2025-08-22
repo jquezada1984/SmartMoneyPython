@@ -12,15 +12,12 @@ import plotly.io as pio
 from tqdm import tqdm
 import datetime
 
-# Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
+# Importar paquetes asumiendo ejecución como módulo (python -m tests.implementacion_icc)
 from smartmoneyconcepts.smc import smc
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 
-
-
-
-
-
+# Importar la estrategia ICC
+from estrategia.icc import ICCStrategy
 
 def calculate_macd(df, fast=12, slow=26, signal=9):
     """Calcular MACD: MACD Line, Signal Line, Histogram"""
@@ -39,6 +36,119 @@ def calculate_rsi(df, period=14):
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
+
+# Función para agregar señales ICC al gráfico
+def add_icc_signals(fig, icc_signals, window_df):
+    """
+    Agrega señales ICC al gráfico con puntos de colores específicos
+    SOLO en la ÚLTIMA VELA del frame (posición actual)
+    
+    - Punto MORADO: Punto de entrada (compra/venta) - ÚLTIMA VELA
+    - Punto VERDE: Take Profit - ÚLTIMA VELA  
+    - Punto ROJO: Stop Loss - ÚLTIMA VELA
+    """
+    if not icc_signals:
+        return fig
+    
+    # SOLO analizar la ÚLTIMA VELA del frame
+    last_candle_index = window_df.index[-1]
+    last_candle_price = window_df['close'].iloc[-1]
+    
+    print(f"   🔍 Analizando ÚLTIMA VELA: {last_candle_index} @ {last_candle_price:.5f}")
+    
+    for signal in icc_signals:
+        try:
+            entry_price = signal.get('entry_price')
+            stop_loss = signal.get('risk_management', {}).get('stop_loss')
+            take_profit = signal.get('risk_management', {}).get('take_profit')
+            direction = signal.get('direction', 'UNKNOWN')
+            
+            if entry_price and stop_loss and take_profit:
+                # Punto de entrada (MORADO) - SOLO en la ÚLTIMA VELA
+                fig.add_trace(
+                    go.Scatter(
+                        x=[last_candle_index],  # ÚLTIMA VELA del frame
+                        y=[entry_price],
+                        mode='markers',
+                        marker=dict(
+                            size=12,
+                            color='purple',
+                            symbol='diamond',
+                            line=dict(width=2, color='white')
+                        ),
+                        name=f'Entrada {direction}',
+                        showlegend=True
+                    ),
+                    row=1, col=1
+                )
+                
+                # Take Profit (VERDE) - SOLO en la ÚLTIMA VELA
+                fig.add_trace(
+                    go.Scatter(
+                        x=[last_candle_index],
+                        y=[take_profit],
+                        mode='markers',
+                        marker=dict(
+                            size=10,
+                            color='lime',
+                            symbol='triangle-up' if direction == 'LONG' else 'triangle-down',
+                            line=dict(width=2, color='white')
+                        ),
+                        name=f'TP {direction}',
+                        showlegend=True
+                    ),
+                    row=1, col=1
+                )
+                
+                # Stop Loss (ROJO) - SOLO en la ÚLTIMA VELA
+                fig.add_trace(
+                    go.Scatter(
+                        x=[last_candle_index],
+                        y=[stop_loss],
+                        mode='markers',
+                        marker=dict(
+                            size=10,
+                            color='red',
+                            symbol='triangle-down' if direction == 'LONG' else 'triangle-up',
+                            line=dict(width=2, color='white')
+                        ),
+                        name=f'SL {direction}',
+                        showlegend=True
+                    ),
+                    row=1, col=1
+                )
+                
+                # Líneas conectoras - SOLO desde la ÚLTIMA VELA
+                # Línea de entrada a TP
+                fig.add_trace(
+                    go.Scatter(
+                        x=[last_candle_index, last_candle_index],
+                        y=[entry_price, take_profit],
+                        mode='lines',
+                        line=dict(color='lime', width=2, dash='dash'),
+                        showlegend=False
+                    ),
+                    row=1, col=1
+                )
+                
+                # Línea de entrada a SL
+                fig.add_trace(
+                    go.Scatter(
+                        x=[last_candle_index, last_candle_index],
+                        y=[entry_price, stop_loss],
+                        mode='lines',
+                        line=dict(color='red', width=2, dash='dash'),
+                        showlegend=False
+                    ),
+                    row=1, col=1
+                )
+                
+                print(f"   🎯 Señal ICC en ÚLTIMA VELA: {direction} - Entrada: {entry_price:.5f}, TP: {take_profit:.5f}, SL: {stop_loss:.5f}")
+                
+        except Exception as e:
+            print(f"   ⚠️ Error agregando señal ICC: {e}")
+    
+    return fig
 
 def calculate_hybrid_trend(df, timeframe_name, market_analysis_lib):
     """
@@ -107,8 +217,6 @@ def analyze_simple_price_trend(window_df):
     else:
         return 0  # Lateral
 
-
-
 def add_FVG(fig, df, fvg_data):
     window_size = len(df)
     
@@ -152,7 +260,6 @@ def add_FVG(fig, df, fvg_data):
             )
     return fig
 
-
 def add_swing_highs_lows(fig, df, swing_highs_lows_data):
     window_size = len(df)
     
@@ -186,7 +293,6 @@ def add_swing_highs_lows(fig, df, swing_highs_lows_data):
             )
 
     return fig
-
 
 def add_bos_choch(fig, df, bos_choch_data):
     window_size = len(df)
@@ -255,7 +361,6 @@ def add_bos_choch(fig, df, bos_choch_data):
             )
 
     return fig
-
 
 def add_OB(fig, df, ob_data):
     def format_volume(volume):
@@ -368,7 +473,6 @@ def add_OB(fig, df, ob_data):
             )
     return fig
 
-
 def add_liquidity(fig, df, liquidity_data):
     window_size = len(df)
     
@@ -446,7 +550,6 @@ def add_liquidity(fig, df, liquidity_data):
                 )
             )
     return fig
-
 
 def add_previous_high_low(fig, df, previous_high_low_data):
     window_size = len(df)
@@ -534,7 +637,6 @@ def add_previous_high_low(fig, df, previous_high_low_data):
 
     return fig
 
-
 def add_sessions(fig, df, sessions):
     window_size = len(df)
     
@@ -557,7 +659,6 @@ def add_sessions(fig, df, sessions):
                 opacity=0.2,
             )
     return fig
-
 
 def add_retracements(fig, df, retracements):
     window_size = len(df)
@@ -603,7 +704,6 @@ def add_retracements(fig, df, retracements):
                 showarrow=False,
             )
     return fig
-
 
 # get the data
 def import_data():
@@ -755,8 +855,13 @@ def import_data():
     
     return df_5m, df_15m, df_1h, df_4h, df  # Retornar datos de todos los timeframes y CSV completo
 
-
 df_5m, df_15m, df_1h, df_4h, df = import_data()
+
+# Inicializar MarketAnalysisLib para detección de tendencias SMC
+market_analysis = MarketAnalysisLib()
+
+# Inicializar la estrategia ICC
+icc_strategy = ICCStrategy()
 
 start_time = datetime.datetime.now()
 print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -770,29 +875,9 @@ print(f"📅 Rango 1H: {df_1h.index[0]} a {df_1h.index[-1]}")
 print(f"📅 Rango 4H: {df_4h.index[0]} a {df_4h.index[-1]}")
 print("=" * 80)
 
-# Inicializar visualizador de señales de trading
-print("🚀 Inicializando visualizador de señales...")
-signal_visualizer = TradingSignalVisualizer()
-
-# Configurar parámetros SMC más sensibles para mejor detección de tendencias
-print("🔧 Configurando parámetros SMC...")
-signal_visualizer.strategy_lib.market_analysis.swing_length = 3  # Reducir de 5 a 3
-signal_visualizer.strategy_lib.market_analysis.lookback = 10     # Reducir de 20 a 10
-print(f"   📊 Swing length: {signal_visualizer.strategy_lib.market_analysis.swing_length}")
-print(f"   📊 Lookback period: {signal_visualizer.strategy_lib.market_analysis.lookback}")
-
 # DICCIONARIO GLOBAL para mantener CONTINUIDAD TEMPORAL de tendencias
 # Cada vela mantiene su tendencia histórica
 global_trend_history = {}
-
-print("🔍 Calculando señales de trading...")
-try:
-    trading_signals = signal_visualizer.calculate_signals(df_5m)
-    print(f"✅ Encontradas {len(trading_signals)} señales de trading")
-except Exception as e:
-    print(f"❌ Error calculando señales: {e}")
-    print(f"⚠️ Continuando sin señales de trading...")
-    trading_signals = []
 
 frames_dir = "frames_png"
 if os.path.exists(frames_dir):
@@ -847,7 +932,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         signal_line = pd.Series([0] * len(window_df), index=window_df.index)
         histogram = pd.Series([0] * len(window_df), index=window_df.index)
         rsi = pd.Series([50] * len(window_df), index=window_df.index)
-    
+
     # Calcular tendencia usando Smart Money Concepts (SMC) - Estructura del mercado
     # IMPLEMENTAR CONTINUIDAD DE TENDENCIA para evitar cambios abruptos entre frames
     if pos >= 20:  # Necesitamos suficientes datos para identificar estructura
@@ -864,7 +949,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar solo las velas hasta la posición actual del frame
             current_df = df_5m.iloc[:pos]  # Solo velas hasta la posición actual
             
-            trend_result = signal_visualizer.market_analysis.detect_trend(current_df, method='structural')
+            trend_result = market_analysis.detect_trend(current_df, method='structural')
             
             # Obtener el valor de tendencia actual (última vela analizada)
             current_trend = trend_result['trend'].iloc[-1]
@@ -932,6 +1017,25 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     print(f"   🔍 SMC detectó: Tendencia={base_trend}")
     print(f"   📊 Aplicando tendencia {base_trend} a todas las velas del frame actual")
     print(f"   📊 Historial global: {len(global_trend_history)} frames analizados")
+    
+    # ESCANEAR SEÑALES ICC
+    try:
+        print(f"   🔍 Escaneando señales ICC...")
+        # Pasar todos los timeframes que requiere la estrategia ICC
+        icc_signals = icc_strategy.scan_for_icc_signals(
+            df_5m=window_df,  # Datos de 5M (ventana actual)
+            df_1h=df_1h,      # Datos de 1H completos
+            df_4h=df_4h       # Datos de 4H completos
+        )
+        if icc_signals:
+            print(f"   🎯 Señales ICC detectadas: {len(icc_signals)}")
+            for i, signal in enumerate(icc_signals):
+                print(f"      📊 Señal {i+1}: {signal.get('direction', 'UNKNOWN')} - Entrada: {signal.get('entry_price', 'N/A'):.5f}")
+        else:
+            print(f"   ⚠️ No se detectaron señales ICC")
+    except Exception as e:
+        print(f"   ❌ Error escaneando señales ICC: {e}")
+        icc_signals = []
     
     # Crear subplots: Candlesticks (67%), MACD (17%), RSI (16%)
     fig = sp.make_subplots(
@@ -1003,7 +1107,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 15M usando las velas hasta la posición actual
             current_df_15m = df_15m.iloc[:closest_15m_idx + 1]
             if len(current_df_15m) >= 20:
-                trend_result_15m = signal_visualizer.market_analysis.detect_trend(current_df_15m, method='structural')
+                trend_result_15m = market_analysis.detect_trend(current_df_15m, method='structural')
                 current_trend_15m = trend_result_15m['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 15M
@@ -1018,7 +1122,6 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_15m = "gray"
                 
                 # Agregar anotación de tendencia 15M debajo de la de 5M en la parte izquierda
-                # NOTA: trend_type_15m puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1061,7 +1164,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 1H usando las velas hasta la posición actual
             current_df_1h = df_1h.iloc[:closest_1h_idx + 1]
             if len(current_df_1h) >= 20:
-                trend_result_1h = signal_visualizer.market_analysis.detect_trend(current_df_1h, method='structural')
+                trend_result_1h = market_analysis.detect_trend(current_df_1h, method='structural')
                 current_trend_1h = trend_result_1h['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 1H
@@ -1076,7 +1179,6 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_1h = "gray"
                 
                 # Agregar anotación de tendencia 1H debajo de la de 15M
-                # NOTA: trend_type_1h puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1119,7 +1221,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 4H usando las velas hasta la posición actual
             current_df_4h = df_4h.iloc[:closest_4h_idx + 1]
             if len(current_df_4h) >= 20:
-                trend_result_4h = signal_visualizer.market_analysis.detect_trend(current_df_4h, method='structural')
+                trend_result_4h = market_analysis.detect_trend(current_df_4h, method='structural')
                 current_trend_4h = trend_result_4h['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 4H
@@ -1134,7 +1236,6 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_4h = "gray"
                 
                 # Agregar anotación de tendencia 4H debajo de la de 1H
-                # NOTA: trend_type_4h puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1160,8 +1261,8 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             
     except Exception as e:
         print(f"   ⚠️ Error calculando tendencia 4H: {e}")
-        trend_type_4h = "4H:ERROR"
-    
+        trend_type_4h = "1H:ERROR"
+
     # MEJORA: Verificar si las tendencias de 15M, 1H y 4H son idénticas y agregar sufijos
     try:
         # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
@@ -1205,116 +1306,6 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             
     except Exception as e:
         print(f"   ⚠️ Error en análisis de confirmación múltiple: {e}")
-    
-    # Agregar indicadores SMC al gráfico principal
-    # Crear datos simulados para los indicadores SMC (en un caso real vendrían de tu análisis)
-    fvg_data = pd.DataFrame({
-        'FVG': [1 if i % 20 == 0 else np.nan for i in range(len(window_df))],
-        'Top': window_df['high'] * 1.001,
-        'Bottom': window_df['low'] * 0.999,
-        'MitigatedIndex': [i + 10 if i % 20 == 0 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para swing highs/lows
-    swing_highs_levels = []
-    for i in range(len(window_df)):
-        if i % 15 == 0:
-            swing_highs_levels.append(window_df['high'].iloc[i])
-        elif i % 15 == 7:
-            swing_highs_levels.append(window_df['low'].iloc[i])
-        else:
-            swing_highs_levels.append(np.nan)
-    
-    swing_highs_lows_data = pd.DataFrame({
-        'HighLow': [1 if i % 15 == 0 else (-1 if i % 15 == 7 else np.nan) for i in range(len(window_df))],
-        'Level': swing_highs_levels
-    }, index=window_df.index)
-    
-    # Crear datos para BOS/CHOCH
-    bos_choch_levels = []
-    for i in range(len(window_df)):
-        if i % 25 == 0:
-            bos_choch_levels.append(window_df['high'].iloc[i])
-        elif i % 25 == 12:
-            bos_choch_levels.append(window_df['low'].iloc[i])
-        else:
-            bos_choch_levels.append(np.nan)
-    
-    bos_choch_data = pd.DataFrame({
-        'BOS': [1 if i % 25 == 0 else np.nan for i in range(len(window_df))],
-        'CHOCH': [1 if i % 25 == 12 else np.nan for i in range(len(window_df))],
-        'Level': bos_choch_levels,
-        'BrokenIndex': [i + 8 if i % 25 == 0 or i % 25 == 12 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    ob_data = pd.DataFrame({
-        'OB': [1 if i % 30 == 0 else (-1 if i % 30 == 15 else np.nan) for i in range(len(window_df))],
-        'Top': window_df['high'] * 1.002,
-        'Bottom': window_df['low'] * 0.998,
-        'MitigatedIndex': [i + 12 if i % 30 == 0 or i % 30 == 15 else 0 for i in range(len(window_df))],
-        'OBVolume': [1000000 + i * 10000 for i in range(len(window_df))],
-        'Percentage': [85 + i % 10 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para liquidez
-    liquidity_levels = []
-    for i in range(len(window_df)):
-        if i % 18 == 0:
-            liquidity_levels.append(window_df['high'].iloc[i] * 1.001)
-        else:
-            liquidity_levels.append(np.nan)
-    
-    liquidity_data = pd.DataFrame({
-        'Liquidity': [1 if i % 18 == 0 else np.nan for i in range(len(window_df))],
-        'Level': liquidity_levels,
-        'End': [i + 6 if i % 18 == 0 else 0 for i in range(len(window_df))],
-        'Swept': [i + 3 if i % 18 == 0 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para máximos y mínimos previos
-    prev_high_levels = []
-    prev_low_levels = []
-    for i in range(len(window_df)):
-        if i % 22 == 0:
-            prev_high_levels.append(window_df['high'].max())
-        else:
-            prev_high_levels.append(np.nan)
-        
-        if i % 22 == 11:
-            prev_low_levels.append(window_df['low'].min())
-        else:
-            prev_low_levels.append(np.nan)
-    
-    previous_high_low_data = pd.DataFrame({
-        'PreviousHigh': prev_high_levels,
-        'PreviousLow': prev_low_levels
-    }, index=window_df.index)
-    
-    sessions = pd.DataFrame({
-        'Active': [1 if i % 40 == 0 else 0 for i in range(len(window_df))],
-        'High': window_df['high'] * 1.003,
-        'Low': window_df['low'] * 0.997
-    }, index=window_df.index)
-    
-    retracements = pd.DataFrame({
-        'Direction': [1 if i % 35 == 0 else (-1 if i % 35 == 17 else 0) for i in range(len(window_df))],
-        'CurrentRetracement%': [23.6 + i % 20 for i in range(len(window_df))],
-        'DeepestRetracement%': [38.2 + i % 30 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Dibujar todos los indicadores SMC
-    add_FVG(fig, window_df, fvg_data)
-    add_swing_highs_lows(fig, window_df, swing_highs_lows_data)
-    add_bos_choch(fig, window_df, bos_choch_data)
-    add_OB(fig, window_df, ob_data)
-    add_liquidity(fig, window_df, liquidity_data)
-    add_previous_high_low(fig, window_df, previous_high_low_data)
-    add_sessions(fig, window_df, sessions)
-    add_retracements(fig, window_df, retracements)
-    
-    # Agregar señales de trading si existen
-    if trading_signals:
-        add_trading_signals(fig, df_5m, trading_signals, window_df)
     
     # 2. GRÁFICO MACD
     fig.add_trace(
@@ -1374,157 +1365,141 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     fig.add_hline(y=50, line_dash="solid", line_color="gray", row=3, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="red", row=3, col=1)
+    
+    # AGREGAR SEÑALES ICC AL GRÁFICO (PUNTOS MORADO, VERDE Y ROJO)
+    fig = add_icc_signals(fig, icc_signals, window_df)
 
     # Configurar layout
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        showlegend=False,
-        margin=dict(l=0, r=0, b=50, t=0),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(12, 14, 18, 1)",
-        font=dict(color="white"),
-        width=800,
-        height=600  # Altura para 3 subplots
-    )
-    
-    # Configurar ejes
-    fig.update_xaxes(
-        visible=True, 
-        showticklabels=True, 
-        row=1, col=1,
-        tickformat="%d/%m %H:%M",
-        tickangle=45,
-        tickfont=dict(size=10, color="white"),
-        tickmode='auto',
-        nticks=8
-    )
-    fig.update_yaxes(visible=False, showticklabels=False, row=1, col=1)
-    
-    # Configurar ejes MACD
-    fig.update_xaxes(
-        title_text="", 
-        row=2, col=1,
-        tickformat="%d/%m %H:%M",
-        tickangle=45,
-        tickfont=dict(size=9, color="white"),
-        tickmode='auto',
-        nticks=6
-    )
-    fig.update_yaxes(title_text="MACD", row=2, col=1)
-    
-    # Configurar ejes RSI
-    fig.update_xaxes(
-        title_text="", 
-        row=3, col=1,
-        tickformat="%d/%m %H:%M",
-        tickangle=45,
-        tickfont=dict(size=9, color="white"),
-        tickmode='auto',
-        nticks=6
-    )
-    fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
-    
-    # MEJORA: Renombrar archivo según confirmación múltiple de tendencias
-    base_filename = f"frame_{pos:04d}"
-    
-    # Verificar si hay confirmación múltiple para renombrar el archivo
-    file_suffix = ""
-    try:
-        # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
-        valid_trends = []
-        if 'trend_type_15m' in locals() and not trend_type_15m.endswith(('NA', 'ERROR')):
-            valid_trends.append(('15M', trend_type_15m, current_trend_15m))
-        if 'trend_type_1h' in locals() and not trend_type_1h.endswith(('NA', 'ERROR')):
-            valid_trends.append(('1H', trend_type_1h, current_trend_1h))
-        if 'trend_type_4h' in locals() and not trend_type_4h.endswith(('NA', 'ERROR')):
-            valid_trends.append(('4H', trend_type_4h, current_trend_4h))
-        
-        # Verificar si hay al menos 2 tendencias válidas para comparar
-        if len(valid_trends) >= 2:
-            # Extraer solo los valores de tendencia (-1, 0, 1)
-            trend_values = [trend[2] for trend in valid_trends]
-            
-            # Verificar si todas las tendencias son iguales y no son laterales (0)
-            if len(set(trend_values)) == 1 and trend_values[0] != 0:
-                # Todas las tendencias son idénticas y no son laterales
-                if trend_values[0] > 0:
-                    # Todas son alcistas
-                    file_suffix = "_ALCISTA"
-                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son ALCISTAS → Archivo: {base_filename}{file_suffix}.png")
-                else:
-                    # Todas son bajistas
-                    file_suffix = "_BAJISTA"
-                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son BAJISTAS → Archivo: {base_filename}{file_suffix}.png")
-            else:
-                print(f"   📊 Tendencias mixtas: No hay confirmación múltiple para renombrar archivo")
-        else:
-            print(f"   ⚠️ Insuficientes tendencias válidas para confirmación múltiple: {len(valid_trends)}")
-            
-    except Exception as e:
-        print(f"   ⚠️ Error en análisis de confirmación múltiple para renombrar: {e}")
-    
-    # Crear nombre final del archivo
-    frame_filename = f"{frames_dir}/{base_filename}{file_suffix}.png"
-    
-    # Guardar frame como PNG
-    try:
-        fig.write_image(frame_filename, width=800, height=600)
-        
-        # Mostrar información consolidada del frame
-        current_trend = trend_data['trend'].iloc[-1] if len(trend_data) > 0 else 0
-        print(f"✅ Frame {pos} guardado: {frame_filename}")
-        print(f"   📊 Resumen del frame:")
-        print(f"      • 5M: Tendencia: {current_trend:.2f}")
-        print(f"      • 15M: Tendencia: {trend_type_15m if 'trend_type_15m' in locals() else 'N/A'}")
-        print(f"      • 1H: Tendencia: {trend_type_1h if 'trend_type_1h' in locals() else 'N/A'}")
-        print(f"      • 4H: Tendencia: {trend_type_4h if 'trend_type_4h' in locals() else 'N/A'}")
-        
-        print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
-        
-    except Exception as e:
-        print(f"❌ Frame en posición {pos} falló: {e}")
-        print(f"   🔄 Continuando con el siguiente frame...")
-
-end_time = datetime.datetime.now()
-print(f"✅ Frames PNG con CANDLESTICKS, MACD, RSI y SEÑALES DE TRADING guardados en: {frames_dir}/")
-print(f"📊 Total de frames generados: {len(df_5m) - start_pos}")
-print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
-print(f"⏱️ Tiempo total de ejecución: {end_time - start_time}")
-print("=" * 80)
-
-# Resumen del análisis simplificado
-print(f"\n🔍 RESUMEN DEL ANÁLISIS SIMPLIFICADO:")
-print(f"   📅 Frames analizados: {start_pos} a {len(df_5m)} (últimos {len(df_5m) - start_pos} frames)")
-print(f"   ⏰ Ventana de análisis: {window} velas por frame")
-print(f"   📊 Temporalidad procesada:")
-print(f"      • 5M: Últimas 500 velas del CSV (datos principales para visualización)")
-print(f"      • 15M: Últimas 500 velas agregadas (datos para análisis de tendencia)")
-print(f"      • 1H: Últimas 500 velas agregadas (datos para análisis de tendencia)")
-print(f"      • 4H: Últimas 500 velas agregadas (datos para análisis de tendencia)")
-print(f"      • Visualización: Últimas 100 velas por frame (5M)")
-print(f"   🎯 Cada frame incluye:")
-print(f"      • Candlesticks principales con indicadores SMC (datos 5M)")
-print(f"      • Tendencia 5M en esquina inferior izquierda")
-print(f"      • Tendencia 15M debajo de 5M")
-print(f"      • Tendencia 1H debajo de 15M")
-print(f"      • Tendencia 4H debajo de 1H")
-print(f"      • MACD y RSI en paneles separados")
-print(f"      • Señales de trading con niveles de confianza")
-print(f"   📈 Lógica SMC implementada:")
-print(f"      • Análisis múltiple: 5M (visualización) + 15M, 1H, 4H (tendencias)")
-print(f"      • 5M: market_analysis_lib.detect_trend('structural') para estructura")
-print(f"      • 15M, 1H, 4H: market_analysis_lib.detect_trend('structural') para tendencias")
-print(f"      • Indicadores técnicos estándar (MACD, RSI)")
-print(f"      • Fallback a análisis simple si SMC falla")
-
-
-# Mostrar detalles de las señales
-if trading_signals:
-    print(f"\n📈 Detalles de señales:")
-    for i, signal in enumerate(trading_signals[:5]):  # Mostrar solo las primeras 5
-        confidence = signal.get('confidence', 0)
-        print(f"   {i+1}. {signal['strategy']} - Confianza: {confidence}% - Precio: {signal['price']:.5f}")
-    if len(trading_signals) > 5:
-        print(f"   ... y {len(trading_signals) - 5} señales más")
-else:
-    print(f"⚠️ No se encontraron señales de trading en los datos proporcionados") 
+     fig.update_layout(
+         xaxis_rangeslider_visible=False,
+         showlegend=False,
+         margin=dict(l=0, r=0, b=50, t=0),
+         plot_bgcolor="rgba(0,0,0,0)",
+         paper_bgcolor="rgba(12, 14, 18, 1)",
+         font=dict(color="white"),
+         width=800,
+         height=600  # Altura para 3 subplots
+     )
+     
+     # Configurar ejes
+     fig.update_xaxes(
+         visible=True, 
+         showticklabels=True, 
+         row=1, col=1,
+         tickformat="%d/%m %H:%M",
+         tickangle=45,
+         tickfont=dict(size=10, color="white"),
+         tickmode='auto',
+         nticks=8
+     )
+     fig.update_yaxes(visible=False, showticklabels=False, row=1, col=1)
+     
+     # Configurar ejes MACD
+     fig.update_xaxes(
+         title_text="", 
+         row=2, col=1,
+         tickformat="%d/%m %H:%M",
+         tickangle=45,
+         tickfont=dict(size=9, color="white"),
+         tickmode='auto',
+         nticks=6
+     )
+     fig.update_yaxes(title_text="MACD", row=2, col=1)
+     
+     # Configurar ejes RSI
+     fig.update_xaxes(
+         title_text="", 
+         row=3, col=1,
+         tickformat="%d/%m %H:%M",
+         tickangle=45,
+         tickfont=dict(size=9, color="white"),
+         tickmode='auto',
+         nticks=6
+     )
+     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
+     
+     # MEJORA: Renombrar archivo según confirmación múltiple de tendencias Y señales ICC
+     base_filename = f"frame_{pos:04d}"
+     
+     # Verificar si hay confirmación múltiple para renombrar el archivo
+     file_suffix = ""
+     try:
+         # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
+         valid_trends = []
+         if 'trend_type_15m' in locals() and not trend_type_15m.endswith(('NA', 'ERROR')):
+             valid_trends.append(('15M', trend_type_15m, current_trend_15m))
+         if 'trend_type_1h' in locals() and not trend_type_1h.endswith(('NA', 'ERROR')):
+             valid_trends.append(('1H', trend_type_1h, current_trend_1h))
+         if 'trend_type_4h' in locals() and not trend_type_4h.endswith(('NA', 'ERROR')):
+             valid_trends.append(('4H', trend_type_4h, current_trend_4h))
+         
+         # Verificar si hay al menos 2 tendencias válidas para comparar
+         if len(valid_trends) >= 2:
+             # Extraer solo los valores de tendencia (-1, 0, 1)
+             trend_values = [trend[2] for trend in valid_trends]
+             
+             # Verificar si todas las tendencias son iguales y no son laterales (0)
+             if len(set(trend_values)) == 1 and trend_values[0] != 0:
+                 # Todas las tendencias son idénticas y no son laterales
+                 if trend_values[0] > 0:
+                     # Todas son alcistas
+                     file_suffix = "_ALCISTA"
+                     print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son ALCISTAS → Archivo: {base_filename}{file_suffix}.png")
+                 else:
+                     # Todas son bajistas
+                     file_suffix = "_BAJISTA"
+                     print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son BAJISTAS → Archivo: {base_filename}{file_suffix}.png")
+             else:
+                 print(f"   📊 Tendencias mixtas: No hay confirmación múltiple para renombrar archivo")
+         else:
+             print(f"   ⚠️ Insuficientes tendencias válidas para confirmación múltiple: {len(valid_trends)}")
+             
+     except Exception as e:
+         print(f"   ⚠️ Error en análisis de confirmación múltiple para renombrar: {e}")
+     
+     # AGREGAR SUFIJO DE SEÑAL ICC AL NOMBRE DEL ARCHIVO
+     icc_signal_suffix = ""
+     if icc_signals:
+         # Verificar si hay señales de compra o venta
+         has_buy_signal = any(signal.get('direction') == 'LONG' for signal in icc_signals)
+         has_sell_signal = any(signal.get('direction') == 'SHORT' for signal in icc_signals)
+         
+         # PRIORIZAR: Solo una señal por frame
+         if has_buy_signal and has_sell_signal:
+             # Si hay ambas, priorizar la primera señal detectada
+             first_signal = icc_signals[0]
+             if first_signal.get('direction') == 'LONG':
+                 icc_signal_suffix = "_COMPRA"
+                 print(f"   🎯 Señales ICC mixtas detectadas → Priorizando COMPRA (primera señal) → Archivo: {base_filename}{file_suffix}{icc_signal_suffix}.png")
+             else:
+                 icc_signal_suffix = "_VENTA"
+                 print(f"   🎯 Señales ICC mixtas detectadas → Priorizando VENTA (primera señal) → Archivo: {base_filename}{file_suffix}{icc_signal_suffix}.png")
+         elif has_buy_signal:
+             icc_signal_suffix = "_COMPRA"
+             print(f"   🎯 Señal ICC de COMPRA detectada → Archivo: {base_filename}{file_suffix}{icc_signal_suffix}.png")
+         elif has_sell_signal:
+             icc_signal_suffix = "_VENTA"
+             print(f"   🎯 Señal ICC de VENTA detectada → Archivo: {base_filename}{file_suffix}{icc_signal_suffix}.png")
+     
+     # Crear nombre final del archivo
+     frame_filename = f"{frames_dir}/{base_filename}{file_suffix}{icc_signal_suffix}.png"
+     
+     # Guardar frame como PNG
+     try:
+         fig.write_image(frame_filename, width=800, height=600)
+         
+         # Mostrar información consolidada del frame
+         current_trend = trend_data['trend'].iloc[-1] if len(trend_data) > 0 else 0
+         print(f"✅ Frame {pos} guardado: {frame_filename}")
+         print(f"   📊 Resumen del frame:")
+         print(f"      • 5M: Tendencia: {current_trend:.2f}")
+         print(f"      • 15M: Tendencia: {trend_type_15m if 'trend_type_15m' in locals() else 'N/A'}")
+         print(f"      • 1H: Tendencia: {trend_type_1h if 'trend_type_1h' in locals() else 'N/A'}")
+         print(f"      • 4H: Tendencia: {trend_type_4h if 'trend_type_4h' in locals() else 'N/A'}")
+         print(f"      • Señales ICC: {len(icc_signals)} detectadas")
+         
+         print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
+         
+     except Exception as e:
+         print(f"❌ Frame en posición {pos} falló: {e}")
+         print(f"   🔄 Continuando con el siguiente frame...")

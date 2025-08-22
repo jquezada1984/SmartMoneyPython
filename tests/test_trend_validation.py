@@ -13,7 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
-from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
+
 
 def load_test_data():
     """Cargar datos de prueba desde el CSV"""
@@ -130,7 +130,7 @@ def analyze_trends(df_5m, df_15m, df_1h, df_4h):
     # Inicializar librerías
     print("⚙️ Inicializando librerías de análisis SMC...")
     market_analysis = MarketAnalysisLib()
-    strategy_lib = MomentumSMCStrategyLib()
+
     print("✅ Librerías SMC inicializadas")
     
     # Calcular tendencias solo para timeframes superiores (15M, 1H, 4H)

@@ -12,7 +12,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
-from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
+
 
 def load_test_data():
     """Cargar datos de prueba"""

@@ -15,208 +15,11 @@ import datetime
 # Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
 from smartmoneyconcepts.smc import smc
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
-from estrategia.momentum_smc_strategy_lib import MomentumSMCStrategyLib
 
-class TradingSignalVisualizer:
-    """
-    Visualizador de señales de trading basado en MomentumSMCStrategyLib
-    """
-    def __init__(self):
-        self.strategy_lib = MomentumSMCStrategyLib()
-        self.market_analysis = MarketAnalysisLib(swing_length=3, lookback=10)
-        self.signals = []
-        self.entry_points = []
-        self.stop_losses = []
-        self.take_proclsfits = []
-        self.cached_indicators = None
-    
-    def calculate_signals(self, df):
-        """
-        Calcular señales de trading usando la librería MomentumSMCStrategyLib
-        y almacenar los indicadores precalculados para su reutilización
-        """
-        print(f"🔄 Iniciando cálculo de señales...")
-        print(f"   📊 Datos a procesar: {len(df)} filas")
-        
-        # Precalcular indicadores una sola vez
-        print(f"   🔧 Precalculando indicadores...")
-        try:
-            self.cached_indicators = self.strategy_lib.precalculate_indicators(df)
-            print(f"   ✅ Indicadores precalculados exitosamente")
-        except Exception as e:
-            print(f"   ❌ Error precalculando indicadores: {e}")
-            raise e
-        
-        # Usar la librería para analizar todas las estrategias
-        print(f"   🎯 Analizando estrategias...")
-        try:
-            signals = self.strategy_lib.analyze_all_strategies(df)
-            print(f"   ✅ Análisis de estrategias completado")
-        except Exception as e:
-            print(f"   ❌ Error analizando estrategias: {e}")
-            raise e
-        
-        # Obtener resumen de señales
-        print(f"   📈 Generando resumen de señales...")
-        try:
-            summary = self.strategy_lib.get_signal_summary(df)
-            print(f"📊 Resumen de señales:")
-            print(f"   Total: {summary['total_signals']}")
-            print(f"   Por estrategia: {summary['by_strategy']}")
-            print(f"   Por confianza: {summary['by_confidence']}")
-        except Exception as e:
-            print(f"   ❌ Error generando resumen: {e}")
-            # No fallar si el resumen falla, continuar con las señales
-        
-        return signals
-    
-    def get_cached_indicators(self):
-        """
-        Obtener los indicadores precalculados
-        """
-        return self.cached_indicators
 
-def add_trading_signals(fig, df, signals, window_df):
-    """
-    Agregar señales de trading al gráfico
-    """
-    for signal in signals:
-        if signal['timestamp'] in window_df.index:
-            # Determinar color según estrategia
-            color_map = {
-                'BOS + Impulse': 'lime',
-                'Order Block + Fibonacci': 'cyan',
-                'Fair Value Gap': 'yellow'
-            }
-            color = color_map.get(signal['strategy'], 'white')
-            
-            # Obtener nivel de confianza
-            confidence = signal.get('confidence', 0)
-            confidence_text = f"{confidence}%" if confidence > 0 else ""
-            
-            # Determinar tamaño del marcador según confianza
-            marker_size = 8 if confidence < 50 else (12 if confidence < 80 else 16)
-            
-            # Agregar marcador de señal
-            fig.add_trace(
-                go.Scatter(
-                    x=[signal['timestamp']],
-                    y=[signal['price']],
-                    mode='markers',
-                    marker=dict(
-                        symbol='triangle-up' if signal['type'] == 'BUY' else 'triangle-down',
-                        size=marker_size,
-                        color=color,
-                        line=dict(color='black', width=1)
-                    ),
-                    name=f"Señal {signal['strategy']}",
-                    showlegend=False
-                ),
-                row=1, col=1
-            )
-            
-            # Si es una señal de Order Block + Fibonacci, mostrar niveles Fibonacci
-            if signal['strategy'] == 'Order Block + Fibonacci' and 'ob_info' in signal:
-                ob_info = signal['ob_info']
-                
-                # Obtener el rango del movimiento
-                if signal['type'] == 'BUY':
-                    swing_high = ob_info['top']
-                    swing_low = ob_info['bottom']
-                else:
-                    swing_high = ob_info['bottom']
-                    swing_low = ob_info['top']
-                
-                price_range = swing_high - swing_low
-                
-                # Niveles Fibonacci comunes
-                fib_levels = {
-                    '0%': 0,
-                    '23.6%': 0.236,
-                    '38.2%': 0.382,
-                    '50%': 0.5,
-                    '61.8%': 0.618,
-                    '78.6%': 0.786,
-                    '100%': 1
-                }
-                
-                # Dibujar líneas Fibonacci
-                for level_name, fib_ratio in fib_levels.items():
-                    fib_price = swing_low + (price_range * fib_ratio)
-                    
-                    # Línea horizontal
-                    fig.add_shape(
-                        type="line",
-                        x0=signal['timestamp'],
-                        y0=fib_price,
-                        x1=window_df.index[-1],
-                        y1=fib_price,
-                        line=dict(
-                            color="gold",
-                            width=1,
-                            dash="dot",
-                        ),
-                        opacity=0.5,
-                        row=1, col=1
-                    )
-                    
-                    # Etiqueta del nivel
-                    fig.add_annotation(
-                        x=signal['timestamp'],
-                        y=fib_price,
-                        text=f"Fib {level_name}",
-                        showarrow=False,
-                        xanchor="right",
-                        font=dict(size=8, color="gold"),
-                        row=1, col=1
-                    )
-                
-                # Resaltar el nivel actual de retroceso
-                current_retracement = ob_info['retracement'] * 100
-                retracement_text = f"Retroceso actual: {current_retracement:.1f}%"
-                
-                fig.add_annotation(
-                    x=signal['timestamp'],
-                    y=signal['price'],
-                    text=retracement_text,
-                    showarrow=True,
-                    arrowhead=2,
-                    arrowsize=1,
-                    arrowwidth=2,
-                    arrowcolor="gold",
-                    font=dict(size=10, color="gold"),
-                    bgcolor="rgba(0,0,0,0.8)",
-                    bordercolor="gold",
-                    borderwidth=1,
-                    row=1, col=1
-                )
-            
-            # Agregar anotación con confianza y detalles
-            strategy_short = signal['strategy'].replace(' + ', '+')[:15]
-            annotation_text = f"{'🔼' if signal['type'] == 'BUY' else '🔽'} {strategy_short}\n{confidence_text}"
-            
-            # Agregar información adicional si está disponible
-            if 'ob_info' in signal:
-                ob_info = signal['ob_info']
-                if ob_info.get('divergencia_rsi'):
-                    annotation_text += "\n↗️ Div. RSI"
-                if ob_info.get('histograma_mejorando'):
-                    annotation_text += "\n📈 MACD+"
-                if ob_info.get('confirmacion_1h'):
-                    annotation_text += "\n✅ 1H"
-            
-            fig.add_annotation(
-                x=signal['timestamp'],
-                y=signal['price'] * (1.002 if signal['type'] == 'BUY' else 0.998),
-                text=annotation_text,
-                showarrow=False,
-                font=dict(color=color, size=7, family='Arial Black'),
-                bgcolor='rgba(0,0,0,0.8)',
-                bordercolor=color,
-                borderwidth=1
-            )
-    
-    return fig
+
+
+
 
 
 def calculate_macd(df, fast=12, slow=26, signal=9):
@@ -955,6 +758,9 @@ def import_data():
 
 df_5m, df_15m, df_1h, df_4h, df = import_data()
 
+# Inicializar MarketAnalysisLib para detección de tendencias SMC
+market_analysis = MarketAnalysisLib()
+
 start_time = datetime.datetime.now()
 print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"📊 Datos 5M cargados: {len(df_5m)} filas")
@@ -967,29 +773,17 @@ print(f"📅 Rango 1H: {df_1h.index[0]} a {df_1h.index[-1]}")
 print(f"📅 Rango 4H: {df_4h.index[0]} a {df_4h.index[-1]}")
 print("=" * 80)
 
-# Inicializar visualizador de señales de trading
-print("🚀 Inicializando visualizador de señales...")
-signal_visualizer = TradingSignalVisualizer()
 
-# Configurar parámetros SMC más sensibles para mejor detección de tendencias
-print("🔧 Configurando parámetros SMC...")
-signal_visualizer.strategy_lib.market_analysis.swing_length = 3  # Reducir de 5 a 3
-signal_visualizer.strategy_lib.market_analysis.lookback = 10     # Reducir de 20 a 10
-print(f"   📊 Swing length: {signal_visualizer.strategy_lib.market_analysis.swing_length}")
-print(f"   📊 Lookback period: {signal_visualizer.strategy_lib.market_analysis.lookback}")
+
+
 
 # DICCIONARIO GLOBAL para mantener CONTINUIDAD TEMPORAL de tendencias
 # Cada vela mantiene su tendencia histórica
 global_trend_history = {}
 
-print("🔍 Calculando señales de trading...")
-try:
-    trading_signals = signal_visualizer.calculate_signals(df_5m)
-    print(f"✅ Encontradas {len(trading_signals)} señales de trading")
-except Exception as e:
-    print(f"❌ Error calculando señales: {e}")
-    print(f"⚠️ Continuando sin señales de trading...")
-    trading_signals = []
+# No se calculan señales de trading (librería eliminada)
+trading_signals = []
+print("ℹ️ Librería de señales de trading eliminada - continuando sin señales")
 
 frames_dir = "frames_png"
 if os.path.exists(frames_dir):
@@ -1061,7 +855,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar solo las velas hasta la posición actual del frame
             current_df = df_5m.iloc[:pos]  # Solo velas hasta la posición actual
             
-            trend_result = signal_visualizer.market_analysis.detect_trend(current_df, method='structural')
+            trend_result = market_analysis.detect_trend(current_df, method='structural')
             
             # Obtener el valor de tendencia actual (última vela analizada)
             current_trend = trend_result['trend'].iloc[-1]
@@ -1200,7 +994,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 15M usando las velas hasta la posición actual
             current_df_15m = df_15m.iloc[:closest_15m_idx + 1]
             if len(current_df_15m) >= 20:
-                trend_result_15m = signal_visualizer.market_analysis.detect_trend(current_df_15m, method='structural')
+                trend_result_15m = market_analysis.detect_trend(current_df_15m, method='structural')
                 current_trend_15m = trend_result_15m['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 15M
@@ -1258,7 +1052,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 1H usando las velas hasta la posición actual
             current_df_1h = df_1h.iloc[:closest_1h_idx + 1]
             if len(current_df_1h) >= 20:
-                trend_result_1h = signal_visualizer.market_analysis.detect_trend(current_df_1h, method='structural')
+                trend_result_1h = market_analysis.detect_trend(current_df_1h, method='structural')
                 current_trend_1h = trend_result_1h['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 1H
@@ -1316,7 +1110,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
             # Analizar tendencia de 4H usando las velas hasta la posición actual
             current_df_4h = df_4h.iloc[:closest_4h_idx + 1]
             if len(current_df_4h) >= 20:
-                trend_result_4h = signal_visualizer.market_analysis.detect_trend(current_df_4h, method='structural')
+                trend_result_4h = market_analysis.detect_trend(current_df_4h, method='structural')
                 current_trend_4h = trend_result_4h['trend'].iloc[-1]
                 
                 # Determinar el tipo de tendencia de 4H
@@ -1509,9 +1303,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     add_sessions(fig, window_df, sessions)
     add_retracements(fig, window_df, retracements)
     
-    # Agregar señales de trading si existen
-    if trading_signals:
-        add_trading_signals(fig, df_5m, trading_signals, window_df)
+
     
     # 2. GRÁFICO MACD
     fig.add_trace(
@@ -1683,9 +1475,8 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         print(f"   🔄 Continuando con el siguiente frame...")
 
 end_time = datetime.datetime.now()
-print(f"✅ Frames PNG con CANDLESTICKS, MACD, RSI y SEÑALES DE TRADING guardados en: {frames_dir}/")
+print(f"✅ Frames PNG con CANDLESTICKS, MACD y RSI guardados en: {frames_dir}/")
 print(f"📊 Total de frames generados: {len(df_5m) - start_pos}")
-print(f"🎯 Señales de trading encontradas: {len(trading_signals)}")
 print(f"⏱️ Tiempo total de ejecución: {end_time - start_time}")
 print("=" * 80)
 
@@ -1706,7 +1497,7 @@ print(f"      • Tendencia 15M debajo de 5M")
 print(f"      • Tendencia 1H debajo de 15M")
 print(f"      • Tendencia 4H debajo de 1H")
 print(f"      • MACD y RSI en paneles separados")
-print(f"      • Señales de trading con niveles de confianza")
+print(f"      • Indicadores SMC (FVG, Order Blocks, Swing Points)")
 print(f"   📈 Lógica SMC implementada:")
 print(f"      • Análisis múltiple: 5M (visualización) + 15M, 1H, 4H (tendencias)")
 print(f"      • 5M: market_analysis_lib.detect_trend('structural') para estructura")
@@ -1715,13 +1506,4 @@ print(f"      • Indicadores técnicos estándar (MACD, RSI)")
 print(f"      • Fallback a análisis simple si SMC falla")
 
 
-# Mostrar detalles de las señales
-if trading_signals:
-    print(f"\n📈 Detalles de señales:")
-    for i, signal in enumerate(trading_signals[:5]):  # Mostrar solo las primeras 5
-        confidence = signal.get('confidence', 0)
-        print(f"   {i+1}. {signal['strategy']} - Confianza: {confidence}% - Precio: {signal['price']:.5f}")
-    if len(trading_signals) > 5:
-        print(f"   ... y {len(trading_signals) - 5} señales más")
-else:
-    print(f"⚠️ No se encontraron señales de trading en los datos proporcionados") 
+ 
