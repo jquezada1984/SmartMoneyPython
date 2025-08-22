@@ -351,18 +351,12 @@ class MarketAnalysisLib:
         RETORNA SOLO: -1 (BAJISTA), 0 (LATERAL), 1 (ALCISTA)
         """
         if len(df) < 20:  # Necesitamos al menos 20 velas para identificar estructura SMC
-            print(f"DEBUG SMC: Datos insuficientes ({len(df)} < 20)")
             return {'detected': False, 'trend': 0}
         
         try:
-            print(f"DEBUG SMC: Analizando {len(df)} velas con swing_length={self.swing_length}")
-            
             # 1. IDENTIFICAR SWING HIGHS Y LOWS REALES usando la librería SMC
             swing_highs_lows = smc.swing_highs_lows(df, swing_length=self.swing_length)
             bos_choch = smc.bos_choch(df, swing_highs_lows)
-            
-            print(f"DEBUG SMC: Swing highs/lows encontrados: {len(swing_highs_lows)}")
-            print(f"DEBUG SMC: BOS/CHoCH encontrados: {len(bos_choch)}")
             
             # 2. ANALIZAR BOS Y CHoCH - PRIORIDAD MÁXIMA
             # Buscar el último BOS o CHoCH en los datos
@@ -372,28 +366,22 @@ class MarketAnalysisLib:
             for i in range(len(bos_choch)):
                 if not pd.isna(bos_choch['BOS'].iloc[i]) and bos_choch['BOS'].iloc[i] != 0:
                     last_bos_idx = i
-                    print(f"DEBUG SMC: BOS detectado en índice {i}: {bos_choch['BOS'].iloc[i]}")
                 if not pd.isna(bos_choch['CHOCH'].iloc[i]) and bos_choch['CHOCH'].iloc[i] != 0:
                     last_choch_idx = i
-                    print(f"DEBUG SMC: CHoCH detectado en índice {i}: {bos_choch['CHOCH'].iloc[i]}")
             
             # 3. DETERMINAR TENDENCIA POR BOS/CHoCH
             if last_bos_idx is not None:
                 bos_value = bos_choch['BOS'].iloc[last_bos_idx]
                 if bos_value == 1:
-                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada por BOS")
                     return {'detected': True, 'trend': 1}  # ALCISTA
                 elif bos_value == -1:
-                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada por BOS")
                     return {'detected': True, 'trend': -1}  # BAJISTA
             
             if last_choch_idx is not None:
                 choch_value = bos_choch['CHOCH'].iloc[last_choch_idx]
                 if choch_value == 1:
-                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada por CHoCH")
                     return {'detected': True, 'trend': 1}  # ALCISTA
                 elif choch_value == -1:
-                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada por CHoCH")
                     return {'detected': True, 'trend': -1}  # BAJISTA
             
             # 4. ANÁLISIS DE ESTRUCTURA SMC REAL (HH+HL, LL+LH)
@@ -401,16 +389,10 @@ class MarketAnalysisLib:
             valid_swing_highs = swing_highs_lows[swing_highs_lows['HighLow'] == 1].dropna()
             valid_swing_lows = swing_highs_lows[swing_highs_lows['HighLow'] == -1].dropna()
             
-            print(f"DEBUG SMC: Swing highs válidos: {len(valid_swing_highs)}")
-            print(f"DEBUG SMC: Swing lows válidos: {len(valid_swing_lows)}")
-            
             if len(valid_swing_highs) >= 2 and len(valid_swing_lows) >= 2:
                 # Obtener los últimos 2 swing highs y lows
                 last_2_highs = valid_swing_highs.tail(2)
                 last_2_lows = valid_swing_lows.tail(2)
-                
-                print(f"DEBUG SMC: Últimos 2 highs: {last_2_highs['Level'].values}")
-                print(f"DEBUG SMC: Últimos 2 lows: {last_2_lows['Level'].values}")
                 
                 # Verificar Higher Highs (HH)
                 hh_confirmed = False
@@ -432,27 +414,21 @@ class MarketAnalysisLib:
                 if len(last_2_highs) >= 2:
                     lh_confirmed = last_2_highs['Level'].iloc[-1] < last_2_highs['Level'].iloc[-2]
                 
-                print(f"DEBUG SMC: HH={hh_confirmed}, HL={hl_confirmed}, LL={ll_confirmed}, LH={lh_confirmed}")
-                
                 # 5. DETERMINAR TENDENCIA DOMINANTE
                 if hh_confirmed and hl_confirmed:
                     # TENDENCIA ALCISTA confirmada: HH + HL
-                    print(f"DEBUG SMC: Tendencia ALCISTA confirmada: HH + HL")
                     return {'detected': True, 'trend': 1}
                 
                 elif ll_confirmed and lh_confirmed:
                     # TENDENCIA BAJISTA confirmada: LL + LH
-                    print(f"DEBUG SMC: Tendencia BAJISTA confirmada: LL + LH")
                     return {'detected': True, 'trend': -1}
                 
                 elif hh_confirmed or hl_confirmed:
                     # TENDENCIA ALCISTA parcial
-                    print(f"DEBUG SMC: Tendencia ALCISTA parcial: HH={hh_confirmed}, HL={hl_confirmed}")
                     return {'detected': True, 'trend': 1}
                 
                 elif ll_confirmed or lh_confirmed:
                     # TENDENCIA BAJISTA parcial
-                    print(f"DEBUG SMC: Tendencia BAJISTA parcial: LL={ll_confirmed}, LH={lh_confirmed}")
                     return {'detected': True, 'trend': -1}
             
             # 6. ANÁLISIS DE PRECIO DIRECTO como respaldo
@@ -467,23 +443,19 @@ class MarketAnalysisLib:
                 # Tendencia alcista: precios más altos
                 if (recent_highs.iloc[-1] > recent_highs.iloc[-2] > recent_highs.iloc[-3] and
                     recent_lows.iloc[-1] > recent_lows.iloc[-2] > recent_lows.iloc[-3]):
-                    print(f"DEBUG SMC: Tendencia ALCISTA por precio directo")
                     return {'detected': True, 'trend': 1}
                 
                 # Tendencia bajista: precios más bajos
                 elif (recent_highs.iloc[-1] < recent_highs.iloc[-2] < recent_highs.iloc[-3] and
                       recent_lows.iloc[-1] < recent_lows.iloc[-2] < recent_lows.iloc[-3]):
-                    print(f"DEBUG SMC: Tendencia BAJISTA por precio directo")
                     return {'detected': True, 'trend': -1}
             
             # 7. ANÁLISIS DE RANGO/CONSOLIDACIÓN
             # Solo si no hay tendencia clara
             if self._is_in_range_smc(df):
-                print(f"DEBUG SMC: Mercado en RANGO/LATERAL")
                 return {'detected': True, 'trend': 0}  # LATERAL
             
             # 8. NO SE PUDO DETERMINAR TENDENCIA
-            print(f"DEBUG SMC: No se pudo determinar tendencia")
             return {'detected': False, 'trend': 0}
             
         except Exception as e:

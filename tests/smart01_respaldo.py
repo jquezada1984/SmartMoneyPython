@@ -1215,6 +1215,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_15m = "gray"
                 
                 # Agregar anotación de tendencia 15M debajo de la de 5M en la parte izquierda
+                # NOTA: trend_type_15m puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1272,6 +1273,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_1h = "gray"
                 
                 # Agregar anotación de tendencia 1H debajo de la de 15M
+                # NOTA: trend_type_1h puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1329,6 +1331,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     trend_color_4h = "gray"
                 
                 # Agregar anotación de tendencia 4H debajo de la de 1H
+                # NOTA: trend_type_4h puede ser actualizado con sufijo _ALCISTA/_BAJISTA
                 fig.add_annotation(
                     x=window_df.index[0],
                     y=window_df['low'].min(),
@@ -1355,6 +1358,50 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     except Exception as e:
         print(f"   ⚠️ Error calculando tendencia 4H: {e}")
         trend_type_4h = "4H:ERROR"
+    
+    # MEJORA: Verificar si las tendencias de 15M, 1H y 4H son idénticas y agregar sufijos
+    try:
+        # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
+        valid_trends = []
+        if 'trend_type_15m' in locals() and not trend_type_15m.endswith(('NA', 'ERROR')):
+            valid_trends.append(('15M', trend_type_15m, current_trend_15m))
+        if 'trend_type_1h' in locals() and not trend_type_1h.endswith(('NA', 'ERROR')):
+            valid_trends.append(('1H', trend_type_1h, current_trend_1h))
+        if 'trend_type_4h' in locals() and not trend_type_4h.endswith(('NA', 'ERROR')):
+            valid_trends.append(('4H', trend_type_4h, current_trend_4h))
+        
+        # Verificar si hay al menos 2 tendencias válidas para comparar
+        if len(valid_trends) >= 2:
+            # Extraer solo los valores de tendencia (-1, 0, 1)
+            trend_values = [trend[2] for trend in valid_trends]
+            
+            # Verificar si todas las tendencias son iguales y no son laterales (0)
+            if len(set(trend_values)) == 1 and trend_values[0] != 0:
+                # Todas las tendencias son idénticas y no son laterales
+                if trend_values[0] > 0:
+                    # Todas son alcistas
+                    suffix = "_ALCISTA"
+                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son ALCISTAS → Agregando sufijo {suffix}")
+                else:
+                    # Todas son bajistas
+                    suffix = "_BAJISTA"
+                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son BAJISTAS → Agregando sufijo {suffix}")
+                
+                # Aplicar sufijo a todas las tendencias válidas
+                for timeframe, trend_type, trend_value in valid_trends:
+                    if timeframe == '15M':
+                        trend_type_15m = trend_type + suffix
+                    elif timeframe == '1H':
+                        trend_type_1h = trend_type + suffix
+                    elif timeframe == '4H':
+                        trend_type_4h = trend_type + suffix
+            else:
+                print(f"   📊 Tendencias mixtas: 15M={trend_values[0] if len(trend_values) > 0 else 'N/A'}, 1H={trend_values[1] if len(trend_values) > 1 else 'N/A'}, 4H={trend_values[2] if len(trend_values) > 2 else 'N/A'}")
+        else:
+            print(f"   ⚠️ Insuficientes tendencias válidas para comparar: {len(valid_trends)}")
+            
+    except Exception as e:
+        print(f"   ⚠️ Error en análisis de confirmación múltiple: {e}")
     
     # Agregar indicadores SMC al gráfico principal
     # Crear datos simulados para los indicadores SMC (en un caso real vendrían de tu análisis)
@@ -1574,9 +1621,50 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     
+    # MEJORA: Renombrar archivo según confirmación múltiple de tendencias
+    base_filename = f"frame_{pos:04d}"
+    
+    # Verificar si hay confirmación múltiple para renombrar el archivo
+    file_suffix = ""
+    try:
+        # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
+        valid_trends = []
+        if 'trend_type_15m' in locals() and not trend_type_15m.endswith(('NA', 'ERROR')):
+            valid_trends.append(('15M', trend_type_15m, current_trend_15m))
+        if 'trend_type_1h' in locals() and not trend_type_1h.endswith(('NA', 'ERROR')):
+            valid_trends.append(('1H', trend_type_1h, current_trend_1h))
+        if 'trend_type_4h' in locals() and not trend_type_4h.endswith(('NA', 'ERROR')):
+            valid_trends.append(('4H', trend_type_4h, current_trend_4h))
+        
+        # Verificar si hay al menos 2 tendencias válidas para comparar
+        if len(valid_trends) >= 2:
+            # Extraer solo los valores de tendencia (-1, 0, 1)
+            trend_values = [trend[2] for trend in valid_trends]
+            
+            # Verificar si todas las tendencias son iguales y no son laterales (0)
+            if len(set(trend_values)) == 1 and trend_values[0] != 0:
+                # Todas las tendencias son idénticas y no son laterales
+                if trend_values[0] > 0:
+                    # Todas son alcistas
+                    file_suffix = "_ALCISTA"
+                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son ALCISTAS → Archivo: {base_filename}{file_suffix}.png")
+                else:
+                    # Todas son bajistas
+                    file_suffix = "_BAJISTA"
+                    print(f"   🎯 CONFIRMACIÓN MÚLTIPLE: Todas las tendencias son BAJISTAS → Archivo: {base_filename}{file_suffix}.png")
+            else:
+                print(f"   📊 Tendencias mixtas: No hay confirmación múltiple para renombrar archivo")
+        else:
+            print(f"   ⚠️ Insuficientes tendencias válidas para confirmación múltiple: {len(valid_trends)}")
+            
+    except Exception as e:
+        print(f"   ⚠️ Error en análisis de confirmación múltiple para renombrar: {e}")
+    
+    # Crear nombre final del archivo
+    frame_filename = f"{frames_dir}/{base_filename}{file_suffix}.png"
+    
     # Guardar frame como PNG
     try:
-        frame_filename = f"{frames_dir}/frame_{pos:04d}.png"
         fig.write_image(frame_filename, width=800, height=600)
         
         # Mostrar información consolidada del frame
