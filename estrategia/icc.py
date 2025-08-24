@@ -316,12 +316,14 @@ class ICCStrategy:
             print(f"   ❌ Error identificando FVG: {e}")
             return pd.DataFrame()
     
-    def wait_for_pullback(self, df: pd.DataFrame, ob_data: pd.DataFrame, fvg_data: pd.DataFrame) -> List[Dict]:
+    def wait_for_pullback(self, df: pd.DataFrame, ob_data: pd.DataFrame, fvg_data: pd.DataFrame, context: Dict = None) -> List[Dict]:
         """
         4. WAIT FOR PULLBACK (Espera retroceso)
         
         Identifica cuando el precio retorna a zonas de OB o FVG y busca
         velas de rechazo claras que sugieren respeto del nivel.
+        
+        IMPORTANTE: Solo genera señales cuando hay confirmación de timeframes superiores
         
         Parámetros:
         -----------
@@ -331,6 +333,8 @@ class ICCStrategy:
             Order Blocks identificados
         fvg_data : DataFrame
             Fair Value Gaps identificados
+        context : Dict
+            Contexto de timeframes superiores (H1, H4)
         
         Retorna:
         --------
@@ -340,9 +344,52 @@ class ICCStrategy:
         
         pullback_signals = []
         
+        # VALIDAR CONTEXTO DE TIMEFRAMES SUPERIORES
+        if context is None:
+            print(f"   ⚠️ No hay contexto de timeframes superiores")
+            print(f"   ⏸️ Pausando análisis de pullbacks...")
+            return []
+        
+        # Obtener tendencias de timeframes superiores
+        h1_trend = context.get('h1_trend', 'LATERAL')
+        h4_trend = context.get('h4_trend', 'LATERAL')
+        
+        print(f"   📊 Contexto de timeframes superiores:")
+        print(f"      • H1: {h1_trend}")
+        print(f"      • H4: {h4_trend}")
+        
+        # Determinar sesgo general
+        overall_bias = context.get('overall_bias', 'LATERAL')
+        print(f"      • Sesgo general: {overall_bias}")
+        
+        # REGLA: Solo generar señales cuando hay confirmación de timeframes superiores
+        if overall_bias == 'LATERAL':
+            print(f"   ⚠️ Sesgo LATERAL en timeframes superiores")
+            print(f"   ⏸️ No se generarán señales sin confirmación de tendencia")
+            return []
+        
         try:
             # Analizar las últimas velas para pullbacks
             recent_candles = df.tail(10)  # Últimas 10 velas
+            
+            # DEBUG: Mostrar información de OB y FVG
+            print(f"   🔍 DEBUG - Datos de OB:")
+            if not ob_data.empty:
+                print(f"      • OB data shape: {ob_data.shape}")
+                print(f"      • OB columns: {ob_data.columns.tolist()}")
+                print(f"      • OB sample: {ob_data.head(3)}")
+                print(f"      • OB types: {ob_data.dtypes}")
+            else:
+                print(f"      • OB data está vacío")
+            
+            print(f"   🔍 DEBUG - Datos de FVG:")
+            if not fvg_data.empty:
+                print(f"      • FVG data shape: {fvg_data.shape}")
+                print(f"      • FVG columns: {fvg_data.columns.tolist()}")
+                print(f"      • FVG sample: {fvg_data.head(3)}")
+                print(f"      • FVG types: {fvg_data.dtypes}")
+            else:
+                print(f"      • FVG data está vacío")
             
             for i, candle in recent_candles.iterrows():
                 current_price = candle['close']
@@ -352,12 +399,39 @@ class ICCStrategy:
                 
                 # Verificar si el precio está cerca de un OB
                 for _, ob in ob_data.iterrows():
+                    # DEBUG: Mostrar información del OB actual
+                    print(f"   🔍 DEBUG - Procesando OB: {ob.to_dict()}")
+                    
                     if ob['OB'] != 0:  # Si es un OB válido
                         ob_top = ob['Top']
                         ob_bottom = ob['Bottom']
                         
+                        print(f"   🔍 DEBUG - OB válido encontrado:")
+                        print(f"      • OB value: {ob['OB']} (tipo: {type(ob['OB'])})")
+                        print(f"      • Top: {ob_top}")
+                        print(f"      • Bottom: {ob_bottom}")
+                        print(f"      • Current price: {current_price}")
+                        
                         # Verificar si el precio está dentro o cerca del OB
                         if ob_bottom <= current_price <= ob_top:
+                            print(f"   🔍 DEBUG - Precio dentro del OB")
+                            
+                            # VALIDAR DIRECCIÓN CON TIMEFRAMES SUPERIORES
+                            ob_direction = 'LONG' if ob['OB'] == 1 else 'SHORT'
+                            print(f"   🔍 DEBUG - Dirección del OB: {ob_direction}")
+                            
+                            # Solo generar señal LONG si H1 o H4 son alcistas
+                            if ob_direction == 'LONG' and overall_bias != 'ALCISTA':
+                                print(f"   ⚠️ OB alcista ignorado - H1/H4 no son alcistas")
+                                continue
+                            
+                            # Solo generar señal SHORT si H1 o H4 son bajistas  
+                            if ob_direction == 'SHORT' and overall_bias != 'BAJISTA':
+                                print(f"   ⚠️ OB bajista ignorado - H1/H4 no son bajistas")
+                                continue
+                            
+                            print(f"   🔍 DEBUG - OB validado, buscando vela de rechazo...")
+                            
                             # Buscar velas de rechazo
                             rejection_signal = self._detect_rejection_candle(
                                 candle, ob['OB'], ob_top, ob_bottom
@@ -366,7 +440,7 @@ class ICCStrategy:
                             if rejection_signal:
                                 signal = {
                                     'type': 'OB_PULLBACK',
-                                    'direction': 'LONG' if ob['OB'] == 1 else 'SHORT',
+                                    'direction': ob_direction,
                                     'price': current_price,
                                     'ob_top': ob_top,
                                     'ob_bottom': ob_bottom,
@@ -376,15 +450,48 @@ class ICCStrategy:
                                 }
                                 pullback_signals.append(signal)
                                 print(f"   ✅ Pullback detectado en OB: {signal['direction']} en {i}")
+                            else:
+                                print(f"   ⚠️ No se detectó vela de rechazo en OB")
+                        else:
+                            print(f"   🔍 DEBUG - Precio fuera del OB")
+                    else:
+                        print(f"   🔍 DEBUG - OB no válido (valor: {ob['OB']})")
                 
                 # Verificar si el precio está cerca de un FVG
                 for _, fvg in fvg_data.iterrows():
+                    # DEBUG: Mostrar información del FVG actual
+                    print(f"   🔍 DEBUG - Procesando FVG: {fvg.to_dict()}")
+                    
                     if not pd.isna(fvg['FVG']):  # Si es un FVG válido
                         fvg_top = fvg['Top']
                         fvg_bottom = fvg['Bottom']
                         
+                        print(f"   🔍 DEBUG - FVG válido encontrado:")
+                        print(f"      • FVG value: {fvg['FVG']} (tipo: {type(fvg['FVG'])})")
+                        print(f"      • Top: {fvg_top}")
+                        print(f"      • Bottom: {fvg_bottom}")
+                        print(f"      • Current price: {current_price}")
+                        
                         # Verificar si el precio está dentro o cerca del FVG
                         if fvg_bottom <= current_price <= fvg_top:
+                            print(f"   🔍 DEBUG - Precio dentro del FVG")
+                            
+                            # VALIDAR DIRECCIÓN CON TIMEFRAMES SUPERIORES
+                            fvg_direction = 'LONG' if fvg['FVG'] == 1 else 'SHORT'
+                            print(f"   🔍 DEBUG - Dirección del FVG: {fvg_direction}")
+                            
+                            # Solo generar señal LONG si H1 o H4 son alcistas
+                            if fvg_direction == 'LONG' and overall_bias != 'ALCISTA':
+                                print(f"   ⚠️ FVG alcista ignorado - H1/H4 no son alcistas")
+                                continue
+                            
+                            # Solo generar señal SHORT si H1 o H4 son bajistas
+                            if fvg_direction == 'SHORT' and overall_bias != 'BAJISTA':
+                                print(f"   ⚠️ FVG bajista ignorado - H1/H4 no son bajistas")
+                                continue
+                            
+                            print(f"   🔍 DEBUG - FVG validado, buscando vela de rechazo...")
+                            
                             # Buscar velas de rechazo
                             rejection_signal = self._detect_rejection_candle(
                                 candle, fvg['FVG'], fvg_top, fvg_bottom
@@ -393,7 +500,7 @@ class ICCStrategy:
                             if rejection_signal:
                                 signal = {
                                     'type': 'FVG_PULLBACK',
-                                    'direction': 'LONG' if fvg['FVG'] == 1 else 'SHORT',
+                                    'direction': fvg_direction,
                                     'price': current_price,
                                     'fvg_top': fvg_top,
                                     'fvg_bottom': fvg_bottom,
@@ -403,6 +510,12 @@ class ICCStrategy:
                                 }
                                 pullback_signals.append(signal)
                                 print(f"   ✅ Pullback detectado en FVG: {signal['direction']} en {i}")
+                            else:
+                                print(f"   ⚠️ No se detectó vela de rechazo en FVG")
+                        else:
+                            print(f"   🔍 DEBUG - Precio fuera del FVG")
+                    else:
+                        print(f"   🔍 DEBUG - FVG no válido (valor: {fvg['FVG']})")
             
             print(f"   📊 Total de señales de pullback: {len(pullback_signals)}")
             
@@ -708,7 +821,7 @@ class ICCStrategy:
                 return []
             
             # 4. Esperar pullback
-            pullback_signals = self.wait_for_pullback(df_5m, ob_data, fvg_data)
+            pullback_signals = self.wait_for_pullback(df_5m, ob_data, fvg_data, context)
             
             # Si no hay pullbacks, no continuar
             if not pullback_signals:

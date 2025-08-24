@@ -260,6 +260,18 @@ class smc:
             np.nan,
         )
 
+        # Validar que tenemos datos válidos antes de hacer pd.concat
+        if len(swing_highs_lows) == 0 or len(level) == 0:
+            # Retornar DataFrame vacío si no hay datos válidos
+            return pd.DataFrame(columns=["HighLow", "Level"])
+        
+        # Validar que las series tienen la misma longitud
+        if len(swing_highs_lows) != len(level):
+            # Ajustar la longitud más corta
+            min_length = min(len(swing_highs_lows), len(level))
+            swing_highs_lows = swing_highs_lows[:min_length]
+            level = level[:min_length]
+
         return pd.concat(
             [
                 pd.Series(swing_highs_lows, name="HighLow"),
