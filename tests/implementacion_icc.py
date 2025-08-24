@@ -12,9 +12,10 @@ import plotly.io as pio
 from tqdm import tqdm
 import datetime
 
-# Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
+# Importar paquetes del proyecto
 from smartmoneyconcepts.smc import smc
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
+from estrategia.icc import ICCStrategy
 
 
 
@@ -106,6 +107,119 @@ def analyze_simple_price_trend(window_df):
         return -1  # Bajista
     else:
         return 0  # Lateral
+
+def add_icc_signals(fig, icc_signals, df, row=1, col=1):
+    """Agregar señales ICC al gráfico (SOLO ESTO, NO CAMBIAR NADA MÁS)"""
+    if not icc_signals:
+        return fig
+    
+    for signal in icc_signals:
+        try:
+            direction = signal.get('direction', 'UNKNOWN')
+            entry_price = signal.get('entry_price')
+            risk_management = signal.get('risk_management', {})
+            stop_loss = risk_management.get('stop_loss')
+            take_profit = risk_management.get('take_profit')
+            
+            if entry_price and stop_loss and take_profit:
+                if direction == 'LONG':
+                    # Marcar punto de entrada COMPRA
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[entry_price],
+                            mode='markers+text',
+                            marker=dict(color='green', size=15, symbol='diamond'),
+                            text=['▲ COMPRA'],
+                            textposition='top center',
+                            name='Entrada COMPRA',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+
+                    # Marcar Stop Loss
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[stop_loss],
+                            mode='markers+text',
+                            marker=dict(color='red', size=10, symbol='x'),
+                            text=['SL'],
+                            textposition='bottom center',
+                            name='Stop Loss',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+
+                    # Marcar Take Profit
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[take_profit],
+                            mode='markers+text',
+                            marker=dict(color='green', size=10, symbol='star'),
+                            text=['TP'],
+                            textposition='top center',
+                            name='Take Profit',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+
+                elif direction == 'SHORT':
+                    # Marcar punto de entrada VENTA
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[entry_price],
+                            mode='markers+text',
+                            marker=dict(color='red', size=15, symbol='diamond'),
+                            text=['▼ VENTA'],
+                            textposition='bottom center',
+                            name='Entrada VENTA',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+
+                    # Marcar Stop Loss
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[stop_loss],
+                            mode='markers+text',
+                            marker=dict(color='green', size=10, symbol='x'),
+                            text=['SL'],
+                            textposition='top center',
+                            name='Stop Loss',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+
+                    # Marcar Take Profit
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[take_profit],
+                            mode='markers+text',
+                            marker=dict(color='red', size=10, symbol='star'),
+                            text=['TP'],
+                            textposition='bottom center',
+                            name='Take Profit',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+                
+                print(f"   🎯 Señal ICC agregada: {direction} - Entrada: {entry_price:.5f}, TP: {take_profit:.5f}, SL: {stop_loss:.5f}")
+                
+        except Exception as e:
+            print(f"   ⚠️ Error agregando señal ICC: {e}")
+    
+    return fig
 
 
 
@@ -761,6 +875,9 @@ df_5m, df_15m, df_1h, df_4h, df = import_data()
 # Inicializar MarketAnalysisLib para detección de tendencias SMC
 market_analysis = MarketAnalysisLib()
 
+# Inicializar la estrategia ICC
+icc_strategy = ICCStrategy()
+
 start_time = datetime.datetime.now()
 print(f"🚀 INICIO DEL SCRIPT: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"📊 Datos 5M cargados: {len(df_5m)} filas")
@@ -1153,6 +1270,71 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         print(f"   ⚠️ Error calculando tendencia 4H: {e}")
         trend_type_4h = "4H:ERROR"
     
+    # ESCANEAR SEÑALES ICC USANDO LA ESTRATEGIA REAL
+    print(f"   🔍 Escaneando señales ICC...")
+    icc_signals = []
+    try:
+        # Solo generar señales si hay tendencias válidas (no NA ni ERROR)
+        if (not trend_type_1h.endswith(('NA', 'ERROR')) and 
+            not trend_type_4h.endswith(('NA', 'ERROR'))):
+            
+            # Validar tendencias 1H y 4H para determinar dirección
+            if current_trend_1h > 0.5 or current_trend_4h > 0.5:
+                # TENDENCIA ALCISTA: Buscar señales de COMPRA
+                print(f"   📈 Tendencias ALCISTAS detectadas (1H: {current_trend_1h:.2f}, 4H: {current_trend_4h:.2f})")
+                print(f"   🎯 Buscando señales de COMPRA...")
+                
+                # Usar la estrategia ICC real
+                icc_signals = icc_strategy.scan_for_icc_signals(
+                    df_5m=window_df,
+                    df_1h=df_1h,
+                    df_4h=df_4h
+                )
+                
+                if icc_signals:
+                    print(f"   🎯 Señales ICC de COMPRA detectadas: {len(icc_signals)}")
+                    for i, signal in enumerate(icc_signals):
+                        direction = signal.get('direction', 'UNKNOWN')
+                        entry_price = signal.get('entry_price', 0)
+                        risk_management = signal.get('risk_management', {})
+                        stop_loss = risk_management.get('stop_loss', 0)
+                        take_profit = risk_management.get('take_profit', 0)
+                        print(f"      📊 Señal {i+1}: {direction} - Entrada: {entry_price:.5f}, TP: {take_profit:.5f}, SL: {stop_loss:.5f}")
+                else:
+                    print(f"   ⚠️ No se detectaron señales ICC de COMPRA")
+                    
+            elif current_trend_1h < -0.5 or current_trend_4h < -0.5:
+                # TENDENCIA BAJISTA: Buscar señales de VENTA
+                print(f"   📉 Tendencias BAJISTAS detectadas (1H: {current_trend_1h:.2f}, 4H: {current_trend_4h:.2f})")
+                print(f"   🎯 Buscando señales de VENTA...")
+                
+                # Usar la estrategia ICC real
+                icc_signals = icc_strategy.scan_for_icc_signals(
+                    df_5m=window_df,
+                    df_1h=df_1h,
+                    df_4h=df_4h
+                )
+                
+                if icc_signals:
+                    print(f"   🎯 Señales ICC de VENTA detectadas: {len(icc_signals)}")
+                    for i, signal in enumerate(icc_signals):
+                        direction = signal.get('direction', 'UNKNOWN')
+                        entry_price = signal.get('entry_price', 0)
+                        risk_management = signal.get('risk_management', {})
+                        stop_loss = risk_management.get('stop_loss', 0)
+                        take_profit = risk_management.get('take_profit', 0)
+                        print(f"      📊 Señal {i+1}: {direction} - Entrada: {entry_price:.5f}, TP: {take_profit:.5f}, SL: {stop_loss:.5f}")
+                else:
+                    print(f"   ⚠️ No se detectaron señales ICC de VENTA")
+            else:
+                print(f"   ⚠️ Tendencias LATERALES (1H: {current_trend_1h:.2f}, 4H: {current_trend_4h:.2f}) - No se buscan señales ICC")
+        else:
+            print(f"   ⚠️ Tendencias 1H o 4H no válidas - No se buscan señales ICC")
+            
+    except Exception as e:
+        print(f"   ❌ Error en estrategia ICC: {e}")
+        icc_signals = []
+    
     # MEJORA: Verificar si las tendencias de 15M, 1H y 4H son idénticas y agregar sufijos
     try:
         # Solo procesar si tenemos tendencias válidas (no NA ni ERROR)
@@ -1303,6 +1485,13 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     add_sessions(fig, window_df, sessions)
     add_retracements(fig, window_df, retracements)
     
+    # AGREGAR SEÑALES ICC AL GRÁFICO (SOLO ESTO ES NUEVO)
+    if icc_signals:
+        fig = add_icc_signals(fig, icc_signals, window_df)
+        print(f"   🎯 Señales ICC agregadas al gráfico")
+    else:
+        print(f"   ⚠️ No hay señales ICC para agregar")
+    
 
     
     # 2. GRÁFICO MACD
@@ -1452,8 +1641,32 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     except Exception as e:
         print(f"   ⚠️ Error en análisis de confirmación múltiple para renombrar: {e}")
     
+    # AGREGAR SUFIJO DE SEÑAL ICC AL NOMBRE DEL ARCHIVO
+    icc_signal_suffix = ""
+    if icc_signals:
+        # Verificar si hay señales de compra o venta
+        has_buy_signal = any(signal.get('direction') == 'LONG' for signal in icc_signals)
+        has_sell_signal = any(signal.get('direction') == 'SHORT' for signal in icc_signals)
+        
+        # PRIORIZAR: Solo una señal por frame
+        if has_buy_signal and has_sell_signal:
+            # Si hay ambas, priorizar la primera señal detectada
+            first_signal = icc_signals[0]
+            if first_signal.get('direction') == 'LONG':
+                icc_signal_suffix = "_COMPRA"
+                print(f"   🎯 Señales ICC mixtas detectadas → Priorizando COMPRA (primera señal)")
+            else:
+                icc_signal_suffix = "_VENTA"
+                print(f"   🎯 Señales ICC mixtas detectadas → Priorizando VENTA (primera señal)")
+        elif has_buy_signal:
+            icc_signal_suffix = "_COMPRA"
+            print(f"   🎯 Señal ICC de COMPRA detectada")
+        elif has_sell_signal:
+            icc_signal_suffix = "_VENTA"
+            print(f"   🎯 Señal ICC de VENTA detectada")
+    
     # Crear nombre final del archivo
-    frame_filename = f"{frames_dir}/{base_filename}{file_suffix}.png"
+    frame_filename = f"{frames_dir}/{base_filename}{file_suffix}{icc_signal_suffix}.png"
     
     # Guardar frame como PNG
     try:
@@ -1467,6 +1680,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         print(f"      • 15M: Tendencia: {trend_type_15m if 'trend_type_15m' in locals() else 'N/A'}")
         print(f"      • 1H: Tendencia: {trend_type_1h if 'trend_type_1h' in locals() else 'N/A'}")
         print(f"      • 4H: Tendencia: {trend_type_4h if 'trend_type_4h' in locals() else 'N/A'}")
+        print(f"      • Señales ICC: {len(icc_signals)} detectadas")
         
         print(f"   🎯 Progreso: {pos - start_pos + 1}/{len(df_5m) - start_pos} frames completados")
         
@@ -1504,3 +1718,6 @@ print(f"      • 5M: market_analysis_lib.detect_trend('structural') para estruc
 print(f"      • 15M, 1H, 4H: market_analysis_lib.detect_trend('structural') para tendencias")
 print(f"      • Indicadores técnicos estándar (MACD, RSI)")
 print(f"      • Fallback a análisis simple si SMC falla")
+
+
+ 
