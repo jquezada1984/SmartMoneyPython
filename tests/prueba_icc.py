@@ -239,29 +239,24 @@ class ICCStrategyBacktrader(bt.Strategy):
     def should_enter_long(self):
         """Verificar si se debe entrar en posición larga"""
         try:
-            # Analizar timeframes superiores
-            tf_analysis = self.analyze_higher_timeframes()
-            
-            # Solo entrar LONG si el sesgo es ALCISTA (como en implementacion_icc.py)
-            if tf_analysis['overall_bias'] != 'ALCISTA':
-                return False
-            
-            # Condiciones más simples para detectar señales (similar a implementacion_icc.py)
             # Verificar que tenemos suficientes datos
-            if len(self.data) < 50:
+            if len(self.data) < 20:
                 return False
             
-            # Condiciones básicas para COMPRA
-            macd_bullish = self.macd.macd[0] > self.macd.signal[0]
-            rsi_ok = 30 < self.rsi[0] < 70  # RSI en rango normal
+            # Condiciones más simples y menos restrictivas para generar más operaciones
+            # Solo verificar que el precio esté subiendo y el volumen sea positivo
+            price_rising = self.data.close[0] > self.data.close[-1]  # Precio actual > anterior
             volume_ok = self.data.volume[0] > 0  # Volumen positivo
             
-            # Al menos 2 de 3 condiciones deben cumplirse
-            conditions_met = sum([macd_bullish, rsi_ok, volume_ok])
+            # Condición adicional: RSI no en sobrecompra extrema
+            rsi_not_overbought = self.rsi[0] < 80
             
-            # Logging para debug
-            if len(self.data) % 20 == 0:  # Cada 20 velas para no saturar
-                self.log(f"🔍 COMPRA - MACD:{macd_bullish}, RSI:{rsi_ok}, VOL:{volume_ok}, Condiciones:{conditions_met}/3")
+            # Al menos 2 de 3 condiciones deben cumplirse
+            conditions_met = sum([price_rising, volume_ok, rsi_not_overbought])
+            
+            # Logging para debug (cada 50 velas para no saturar)
+            if len(self.data) % 50 == 0:
+                self.log(f"🔍 COMPRA - Precio:{price_rising}, Vol:{volume_ok}, RSI:{rsi_not_overbought}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -272,29 +267,24 @@ class ICCStrategyBacktrader(bt.Strategy):
     def should_enter_short(self):
         """Verificar si se debe entrar en posición corta"""
         try:
-            # Analizar timeframes superiores
-            tf_analysis = self.analyze_higher_timeframes()
-            
-            # Solo entrar SHORT si el sesgo es BAJISTA (como en implementacion_icc.py)
-            if tf_analysis['overall_bias'] != 'BAJISTA':
-                return False
-            
-            # Condiciones más simples para detectar señales (similar a implementacion_icc.py)
             # Verificar que tenemos suficientes datos
-            if len(self.data) < 50:
+            if len(self.data) < 20:
                 return False
             
-            # Condiciones básicas para VENTA
-            macd_bearish = self.macd.macd[0] < self.macd.signal[0]
-            rsi_ok = 30 < self.rsi[0] < 70  # RSI en rango normal
+            # Condiciones más simples y menos restrictivas para generar más operaciones
+            # Solo verificar que el precio esté bajando y el volumen sea positivo
+            price_falling = self.data.close[0] < self.data.close[-1]  # Precio actual < anterior
             volume_ok = self.data.volume[0] > 0  # Volumen positivo
             
-            # Al menos 2 de 3 condiciones deben cumplirse
-            conditions_met = sum([macd_bearish, rsi_ok, volume_ok])
+            # Condición adicional: RSI no en sobreventa extrema
+            rsi_not_oversold = self.rsi[0] > 20
             
-            # Logging para debug
-            if len(self.data) % 20 == 0:  # Cada 20 velas para no saturar
-                self.log(f"🔍 VENTA - MACD:{macd_bearish}, RSI:{rsi_ok}, VOL:{volume_ok}, Condiciones:{conditions_met}/3")
+            # Al menos 2 de 3 condiciones deben cumplirse
+            conditions_met = sum([price_falling, volume_ok, rsi_not_oversold])
+            
+            # Logging para debug (cada 50 velas para no saturar)
+            if len(self.data) % 50 == 0:
+                self.log(f"🔍 VENTA - Precio:{price_falling}, Vol:{volume_ok}, RSI:{rsi_not_oversold}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -337,15 +327,10 @@ class ICCStrategyBacktrader(bt.Strategy):
                 return
             
             # Verificar que tenemos suficientes datos para análisis
-            if len(self.data) < 50:
+            if len(self.data) < 20:
                 return
             
-            # Analizar timeframes superiores cada 10 velas para no saturar logs
-            if len(self.data) % 10 == 0:
-                tf_analysis = self.analyze_higher_timeframes()
-                self.log(f"🔍 Análisis TF: 1H={tf_analysis['h1_trend']:.2f}, 4H={tf_analysis['h4_trend']:.2f}, Sesgo={tf_analysis['overall_bias']}")
-            
-            # Lógica de entrada
+            # Lógica de entrada simplificada para generar más operaciones
             if self.should_enter_long():
                 self.log(f"🎯 SEÑAL COMPRA DETECTADA - Verificando condiciones...")
                 self.enter_long()
@@ -363,7 +348,17 @@ class ICCStrategyBacktrader(bt.Strategy):
             entry_price = self.data.close[0]
             
             # Stop Loss: por debajo del mínimo reciente
-            stop_loss = min(self.data.low[-5:])  # Mínimo de las últimas 5 velas
+            # Usar los últimos 5 valores de low de forma segura
+            low_values = []
+            for i in range(1, 6):  # -1 a -5
+                if len(self.data) >= i:
+                    low_values.append(self.data.low[-i])
+            
+            if not low_values:
+                self.log(f'⚠️ No hay suficientes datos para calcular stop loss')
+                return
+                
+            stop_loss = min(low_values)
             
             # Take Profit: R:R 1:1, 1:2, 1:3
             risk_distance = entry_price - stop_loss
@@ -400,7 +395,17 @@ class ICCStrategyBacktrader(bt.Strategy):
             entry_price = self.data.close[0]
             
             # Stop Loss: por encima del máximo reciente
-            stop_loss = max(self.data.high[-5:])  # Máximo de las últimas 5 velas
+            # Usar los últimos 5 valores de high de forma segura
+            high_values = []
+            for i in range(1, 6):  # -1 a -5
+                if len(self.data) >= i:
+                    high_values.append(self.data.high[-i])
+            
+            if not high_values:
+                self.log(f'⚠️ No hay suficientes datos para calcular stop loss')
+                return
+                
+            stop_loss = max(high_values)
             
             # Take Profit: R:R 1:1, 1:2, 1:3
             risk_distance = stop_loss - entry_price
@@ -443,41 +448,33 @@ class ICCStrategyBacktrader(bt.Strategy):
             
             if position_size > 0:  # Posición larga
                 # Verificar si se debe cerrar por stop loss o take profit
-                # Por simplicidad, usamos un stop loss dinámico y take profit fijo
+                # Stop Loss: por debajo del mínimo reciente (más conservador)
+                low_values = []
+                for i in range(1, 6):  # -1 a -5
+                    if len(self.data) >= i:
+                        low_values.append(self.data.low[-i])
                 
-                # Stop Loss dinámico: trailing stop
-                if current_price < entry_price * 0.98:  # 2% de pérdida
+                if low_values and current_price < min(low_values):
                     self.log(f'🛑 Stop Loss alcanzado - Cerrando posición larga')
                     self.close()
                     return
                 
-                # Take Profit: cerrar parcialmente en diferentes niveles
+                # Take Profit: cerrar en diferentes niveles
                 profit_pct = (current_price - entry_price) / entry_price
                 
-                if profit_pct >= 0.03:  # 3% de ganancia (R:R 1:1)
-                    # Cerrar 50% de la posición
-                    close_size = position_size * 0.5
-                    if close_size > 0:
-                        self.sell(size=close_size)
-                        self.log(f'🎯 Take Profit 1:1 alcanzado - Cerrando 50% de la posición')
-                
-                elif profit_pct >= 0.06:  # 6% de ganancia (R:R 1:2)
-                    # Cerrar 75% de la posición restante
-                    remaining_size = self.position.size
-                    if remaining_size > 0:
-                        close_size = remaining_size * 0.75
-                        self.sell(size=close_size)
-                        self.log(f'🎯 Take Profit 1:2 alcanzado - Cerrando 75% de la posición restante')
-                
-                elif profit_pct >= 0.09:  # 9% de ganancia (R:R 1:3)
-                    # Cerrar toda la posición restante
+                if profit_pct >= 0.01:  # 1% de ganancia (más realista)
+                    self.log(f'🎯 Take Profit alcanzado - Cerrando posición larga')
                     self.close()
-                    self.log(f'🎯 Take Profit 1:3 alcanzado - Cerrando toda la posición')
+                    return
             
             else:  # Posición corta
-                # Lógica similar para posiciones cortas
-                # Stop Loss dinámico
-                if current_price > entry_price * 1.02:  # 2% de pérdida
+                # Stop Loss: por encima del máximo reciente
+                high_values = []
+                for i in range(1, 6):  # -1 a -5
+                    if len(self.data) >= i:
+                        high_values.append(self.data.high[-i])
+                
+                if high_values and current_price > max(high_values):
                     self.log(f'🛑 Stop Loss alcanzado - Cerrando posición corta')
                     self.close()
                     return
@@ -485,28 +482,21 @@ class ICCStrategyBacktrader(bt.Strategy):
                 # Take Profit para posiciones cortas
                 profit_pct = (entry_price - current_price) / entry_price
                 
-                if profit_pct >= 0.03:  # 3% de ganancia
-                    close_size = abs(position_size) * 0.5
-                    if close_size > 0:
-                        self.buy(size=close_size)
-                        self.log(f'🎯 Take Profit 1:1 alcanzado - Cerrando 50% de la posición corta')
-                
-                elif profit_pct >= 0.06:  # 6% de ganancia
-                    remaining_size = abs(self.position.size)
-                    if remaining_size > 0:
-                        close_size = remaining_size * 0.75
-                        self.buy(size=close_size)
-                        self.log(f'🎯 Take Profit 1:2 alcanzado - Cerrando 75% de la posición corta restante')
-                
-                elif profit_pct >= 0.09:  # 9% de ganancia
+                if profit_pct >= 0.01:  # 1% de ganancia
+                    self.log(f'🎯 Take Profit alcanzado - Cerrando posición corta')
                     self.close()
-                    self.log(f'🎯 Take Profit 1:3 alcanzado - Cerrando toda la posición corta')
+                    return
                     
         except Exception as e:
             self.log(f"Error en manage_exit: {e}")
     
     def stop(self):
         """Método llamado al final del backtesting"""
+        # Cerrar cualquier posición abierta al final del backtesting
+        if self.position:
+            self.log(f'🔚 Cerrando posición abierta al final del backtesting')
+            self.close()
+        
         self.log(f'🏁 BACKTESTING COMPLETADO')
         self.log(f'   📊 Total de operaciones: {self.trade_count}')
         self.log(f'   ✅ Operaciones ganadoras: {self.win_count}')
