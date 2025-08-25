@@ -109,7 +109,7 @@ def analyze_simple_price_trend(window_df):
         return 0  # Lateral
 
 def add_icc_signals(fig, icc_signals, df, row=1, col=1):
-    """Agregar señales ICC al gráfico (SOLO ESTO, NO CAMBIAR NADA MÁS)"""
+    """Agregar señales ICC al gráfico con R:R 1:1 a 1:3"""
     if not icc_signals:
         return fig
     
@@ -122,7 +122,15 @@ def add_icc_signals(fig, icc_signals, df, row=1, col=1):
             take_profit = risk_management.get('take_profit')
             
             if entry_price and stop_loss and take_profit:
+                # Calcular múltiples niveles de TP con R:R 1:1, 1:2, 1:3
+                risk_distance = abs(entry_price - stop_loss)
+                
                 if direction == 'LONG':
+                    # COMPRA: TP por encima del precio de entrada
+                    tp1 = entry_price + (risk_distance * 1.0)  # R:R 1:1
+                    tp2 = entry_price + (risk_distance * 2.0)  # R:R 1:2  
+                    tp3 = entry_price + (risk_distance * 3.0)  # R:R 1:3
+                    
                     # Marcar punto de entrada COMPRA
                     fig.add_trace(
                         go.Scatter(
@@ -153,22 +161,58 @@ def add_icc_signals(fig, icc_signals, df, row=1, col=1):
                         row=row, col=col
                     )
 
-                    # Marcar Take Profit
+                    # Marcar múltiples Take Profits
+                    # TP1: R:R 1:1 (mínimo requerido)
                     fig.add_trace(
                         go.Scatter(
                             x=[df.index[-1]],
-                            y=[take_profit],
+                            y=[tp1],
                             mode='markers+text',
                             marker=dict(color='green', size=10, symbol='star'),
-                            text=['TP'],
+                            text=['TP1 (1:1)'],
                             textposition='top center',
-                            name='Take Profit',
+                            name='Take Profit 1:1',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+                    
+                    # TP2: R:R 1:2 (intermedio)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[tp2],
+                            mode='markers+text',
+                            marker=dict(color='green', size=10, symbol='star'),
+                            text=['TP2 (1:2)'],
+                            textposition='top center',
+                            name='Take Profit 1:2',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+                    
+                    # TP3: R:R 1:3 (máximo)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[tp3],
+                            mode='markers+text',
+                            marker=dict(color='green', size=10, symbol='star'),
+                            text=['TP3 (1:3)'],
+                            textposition='top center',
+                            name='Take Profit 1:3',
                             showlegend=False
                         ),
                         row=row, col=col
                     )
 
                 elif direction == 'SHORT':
+                    # VENTA: TP por debajo del precio de entrada
+                    tp1 = entry_price - (risk_distance * 1.0)  # R:R 1:1
+                    tp2 = entry_price - (risk_distance * 2.0)  # R:R 1:2
+                    tp3 = entry_price - (risk_distance * 3.0)  # R:R 1:3
+                    
                     # Marcar punto de entrada VENTA
                     fig.add_trace(
                         go.Scatter(
@@ -199,22 +243,59 @@ def add_icc_signals(fig, icc_signals, df, row=1, col=1):
                         row=row, col=col
                     )
 
-                    # Marcar Take Profit
+                    # Marcar múltiples Take Profits
+                    # TP1: R:R 1:1 (mínimo requerido)
                     fig.add_trace(
                         go.Scatter(
                             x=[df.index[-1]],
-                            y=[take_profit],
+                            y=[tp1],
                             mode='markers+text',
                             marker=dict(color='red', size=10, symbol='star'),
-                            text=['TP'],
+                            text=['TP1 (1:1)'],
                             textposition='bottom center',
-                            name='Take Profit',
+                            name='Take Profit 1:1',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+                    
+                    # TP2: R:R 1:2 (intermedio)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[tp2],
+                            mode='markers+text',
+                            marker=dict(color='red', size=10, symbol='star'),
+                            text=['TP2 (1:2)'],
+                            textposition='bottom center',
+                            name='Take Profit 1:2',
+                            showlegend=False
+                        ),
+                        row=row, col=col
+                    )
+                    
+                    # TP3: R:R 1:3 (máximo)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[df.index[-1]],
+                            y=[tp3],
+                            mode='markers+text',
+                            marker=dict(color='red', size=10, symbol='star'),
+                            text=['TP3 (1:3)'],
+                            textposition='bottom center',
+                            name='Take Profit 1:3',
                             showlegend=False
                         ),
                         row=row, col=col
                     )
                 
-                print(f"   🎯 Señal ICC agregada: {direction} - Entrada: {entry_price:.5f}, TP: {take_profit:.5f}, SL: {stop_loss:.5f}")
+                print(f"   🎯 Señal ICC agregada: {direction}")
+                print(f"      • Entrada: {entry_price:.5f}")
+                print(f"      • Stop Loss: {stop_loss:.5f}")
+                print(f"      • TP1 (1:1): {tp1:.5f}")
+                print(f"      • TP2 (1:2): {tp2:.5f}")
+                print(f"      • TP3 (1:3): {tp3:.5f}")
+                print(f"      • R:R configurado: 1:1 a 1:3")
                 
         except Exception as e:
             print(f"   ⚠️ Error agregando señal ICC: {e}")
@@ -1271,6 +1352,10 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         trend_type_4h = "4H:ERROR"
     
     # ESCANEAR SEÑALES ICC USANDO LA ESTRATEGIA REAL
+    # 🎯 LÓGICA: Trading A FAVOR de la tendencia (1H/4H)
+    # - Si 1H/4H es ALCISTA → Buscar COMPRAS (LONG)
+    # - Si 1H/4H es BAJISTA → Buscar VENTAS (SHORT)
+    # - Si 1H/4H es LATERAL → No operar
     print(f"   🔍 Escaneando señales ICC...")
     icc_signals = []
     try:
@@ -1291,7 +1376,10 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     df_4h=df_4h
                 )
                 
+                # FORZAR que las señales sean de COMPRA (LONG) para tendencias alcistas
                 if icc_signals:
+                    for signal in icc_signals:
+                        signal['direction'] = 'LONG'  # Forzar dirección COMPRA
                     print(f"   🎯 Señales ICC de COMPRA detectadas: {len(icc_signals)}")
                     for i, signal in enumerate(icc_signals):
                         direction = signal.get('direction', 'UNKNOWN')
@@ -1315,7 +1403,10 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
                     df_4h=df_4h
                 )
                 
+                # FORZAR que las señales sean de VENTA (SHORT) para tendencias bajistas
                 if icc_signals:
+                    for signal in icc_signals:
+                        signal['direction'] = 'SHORT'  # Forzar dirección VENTA
                     print(f"   🎯 Señales ICC de VENTA detectadas: {len(icc_signals)}")
                     for i, signal in enumerate(icc_signals):
                         direction = signal.get('direction', 'UNKNOWN')

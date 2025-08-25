@@ -35,7 +35,7 @@ class ICCStrategy:
     """
     
     def __init__(self, 
-                 risk_reward_min: float = 3.0,
+                 risk_reward_min: float = 1.0,  # Mínimo: 1:1 para operar
                  ob_lookback: int = 50,
                  fvg_lookback: int = 30,
                  swing_length: int = 20):
@@ -69,7 +69,7 @@ class ICCStrategy:
         self.signals = []
         
         print(f"🚀 Estrategia ICC inicializada")
-        print(f"   📊 R:R mínimo: 1:{risk_reward_min}")
+        print(f"   📊 R:R configurado: 1:1 mínimo (TP1), 1:2 (TP2), 1:3 (TP3)")
         print(f"   🔍 Lookback OB: {ob_lookback} períodos")
         print(f"   🔍 Lookback FVG: {fvg_lookback} períodos")
         print(f"   🔍 Swing length: {swing_length} períodos")
@@ -728,9 +728,9 @@ class ICCStrategy:
                 else:
                     stop_loss = entry_price * 0.995  # 0.5% por defecto
                     
-                # Take Profit 1:3 (punto más alejado)
+                # Take Profit: R:R 1:1 (mínimo requerido para operar)
                 risk = entry_price - stop_loss
-                take_profit = entry_price + (risk * self.risk_reward_min)
+                take_profit = entry_price + (risk * 1.0)  # R:R 1:1 mínimo
                 
             else:  # SHORT
                 if 'ob_top' in signal:
@@ -740,9 +740,9 @@ class ICCStrategy:
                 else:
                     stop_loss = entry_price * 1.005  # 0.5% por defecto
                     
-                # Take Profit 1:3 (punto más alejado)
+                # Take Profit: R:R 1:1 (mínimo requerido para operar)
                 risk = stop_loss - entry_price
-                take_profit = entry_price - (risk * self.risk_reward_min)
+                take_profit = entry_price - (risk * 1.0)  # R:R 1:1 mínimo
             
             # Calcular R:R
             risk_amount = abs(entry_price - stop_loss)
