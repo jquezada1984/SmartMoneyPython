@@ -194,15 +194,15 @@ class ICCStrategy:
         try:
             # Obtener swing highs/lows para identificar OB
             swing_data = smc.swing_highs_lows(df, swing_length=self.swing_length)
-            print(f"   🔍 Swing data obtenida: {len(swing_data)} filas")
-            print(f"   🔍 Swing data columns: {swing_data.columns.tolist() if hasattr(swing_data, 'columns') else 'No columns'}")
+                    # print(f"   🔍 Swing data obtenida: {len(swing_data)} filas")
+        # print(f"   🔍 Swing data columns: {swing_data.columns.tolist() if hasattr(swing_data, 'columns') else 'No columns'}")
             
             # Identificar Order Blocks
             ob_data = smc.ob(df, swing_data, close_mitigation=False)
-            print(f"   🔍 OB data obtenida: {type(ob_data)}")
-            if ob_data is not None:
-                print(f"   🔍 OB data length: {len(ob_data)}")
-                print(f"   🔍 OB data sample: {ob_data.head() if hasattr(ob_data, 'head') else ob_data[:5]}")
+                    # print(f"   🔍 OB data obtenida: {type(ob_data)}")
+        # if ob_data is not None:
+        #     print(f"   🔍 OB data length: {len(ob_data)}")
+        #     print(f"   🔍 OB data sample: {ob_data.head() if hasattr(ob_data, 'head') else ob_data[:5]}")
             
             if ob_data is not None and not ob_data.empty:
                 # Convertir Series a DataFrame si es necesario
@@ -270,10 +270,10 @@ class ICCStrategy:
         try:
             # Identificar FVG con join_consecutive para evitar duplicados
             fvg_data = smc.fvg(df, join_consecutive=True)
-            print(f"   🔍 FVG data obtenida: {type(fvg_data)}")
-            if fvg_data is not None:
-                print(f"   🔍 FVG data length: {len(fvg_data)}")
-                print(f"   🔍 FVG data sample: {fvg_data.head() if hasattr(fvg_data, 'head') else fvg_data[:5]}")
+            # print(f"   🔍 FVG data obtenida: {type(fvg_data)}")
+            # if fvg_data is not None:
+            #     print(f"   🔍 FVG data length: {len(fvg_data)}")
+            #     print(f"   🔍 FVG data sample: {fvg_data.head() if hasattr(fvg_data, 'head') else fvg_data[:5]}")
             
             if fvg_data is not None and not fvg_data.empty:
                 # Convertir Series a DataFrame si es necesario
@@ -295,17 +295,17 @@ class ICCStrategy:
                 bearish_fvg = recent_fvg[recent_fvg['FVG'] == -1]
                 no_fvg = recent_fvg[recent_fvg['FVG'].isna()]
                 
-                print(f"   ✅ Fair Value Gaps identificados:")
-                print(f"      • ALCISTAS: {len(bullish_fvg)}")
-                print(f"      • BAJISTAS: {len(bearish_fvg)}")
-                print(f"      • SIN FVG: {len(no_fvg)}")
-                print(f"      • Total: {len(recent_fvg)}")
+                # print(f"   ✅ Fair Value Gaps identificados:")
+                # print(f"      • ALCISTAS: {len(bullish_fvg)}")
+                # print(f"      • BAJISTAS: {len(bearish_fvg)}")
+                # print(f"      • SIN FVG: {len(no_fvg)}")
+                # print(f"      • Total: {len(recent_fvg)}")
                 
-                # Mostrar algunos detalles de los FVG encontrados
-                if len(bullish_fvg) > 0:
-                    print(f"      📈 FVG Alcistas en índices: {bullish_fvg.index.tolist()[:5]}")
-                if len(bearish_fvg) > 0:
-                    print(f"      📉 FVG Bajistas en índices: {bearish_fvg.index.tolist()[:5]}")
+                # # Mostrar algunos detalles de los FVG encontrados
+                # if len(bullish_fvg) > 0:
+                #     print(f"      📈 FVG Alcistas en índices: {bullish_fvg.index.tolist()[:5]}")
+                # if len(bearish_fvg) > 0:
+                #     print(f"      📉 FVG Bajistas en índices: {bearish_fvg.index.tolist()[:5]}")
                 
                 return recent_fvg
             else:
@@ -372,24 +372,24 @@ class ICCStrategy:
             # Analizar las últimas velas para pullbacks
             recent_candles = df.tail(10)  # Últimas 10 velas
             
-            # DEBUG: Mostrar información de OB y FVG
-            print(f"   🔍 DEBUG - Datos de OB:")
-            if not ob_data.empty:
-                print(f"      • OB data shape: {ob_data.shape}")
-                print(f"      • OB columns: {ob_data.columns.tolist()}")
-                print(f"      • OB sample: {ob_data.head(3)}")
-                print(f"      • OB types: {ob_data.dtypes}")
-            else:
-                print(f"      • OB data está vacío")
+            # DEBUG: Mostrar información de OB y FVG (comentado para reducir output)
+            # print(f"   🔍 DEBUG - Datos de OB:")
+            # if not ob_data.empty:
+            #     print(f"      • OB data shape: {ob_data.shape}")
+            #     print(f"      • OB columns: {ob_data.columns.tolist()}")
+            #     print(f"      • OB sample: {ob_data.head(3)}")
+            #     print(f"      • OB types: {ob_data.dtypes}")
+            # else:
+            #     print(f"      • OB data está vacío")
             
-            print(f"   🔍 DEBUG - Datos de FVG:")
-            if not fvg_data.empty:
-                print(f"      • FVG data shape: {fvg_data.shape}")
-                print(f"      • FVG columns: {fvg_data.columns.tolist()}")
-                print(f"      • FVG sample: {fvg_data.head(3)}")
-                print(f"      • FVG types: {fvg_data.dtypes}")
-            else:
-                print(f"      • FVG data está vacío")
+            # print(f"   🔍 DEBUG - Datos de FVG:")
+            # if not fvg_data.empty:
+            #     print(f"      • FVG data shape: {fvg_data.shape}")
+            #     print(f"      • FVG columns: {fvg_data.columns.tolist()}")
+            #     print(f"      • FVG sample: {fvg_data.head(3)}")
+            #     print(f"      • FVG types: {fvg_data.dtypes}")
+            # else:
+            #     print(f"      • FVG data está vacío")
             
             for i, candle in recent_candles.iterrows():
                 current_price = candle['close']
@@ -399,38 +399,38 @@ class ICCStrategy:
                 
                 # Verificar si el precio está cerca de un OB
                 for _, ob in ob_data.iterrows():
-                    # DEBUG: Mostrar información del OB actual
-                    print(f"   🔍 DEBUG - Procesando OB: {ob.to_dict()}")
+                    # DEBUG: Mostrar información del OB actual (comentado)
+                    # print(f"   🔍 DEBUG - Procesando OB: {ob.to_dict()}")
                     
                     if ob['OB'] != 0:  # Si es un OB válido
                         ob_top = ob['Top']
                         ob_bottom = ob['Bottom']
                         
-                        print(f"   🔍 DEBUG - OB válido encontrado:")
-                        print(f"      • OB value: {ob['OB']} (tipo: {type(ob['OB'])})")
-                        print(f"      • Top: {ob_top}")
-                        print(f"      • Bottom: {ob_bottom}")
-                        print(f"      • Current price: {current_price}")
+                        # print(f"   🔍 DEBUG - OB válido encontrado:")
+                        # print(f"      • OB value: {ob['OB']} (tipo: {type(ob['OB'])})")
+                        # print(f"      • Top: {ob_top}")
+                        # print(f"      • Bottom: {ob_bottom}")
+                        # print(f"      • Current price: {current_price}")
                         
                         # Verificar si el precio está dentro o cerca del OB
                         if ob_bottom <= current_price <= ob_top:
-                            print(f"   🔍 DEBUG - Precio dentro del OB")
+                            # print(f"   🔍 DEBUG - Precio dentro del OB")
                             
                             # VALIDAR DIRECCIÓN CON TIMEFRAMES SUPERIORES
                             ob_direction = 'LONG' if ob['OB'] == 1 else 'SHORT'
-                            print(f"   🔍 DEBUG - Dirección del OB: {ob_direction}")
+                            # print(f"   🔍 DEBUG - Dirección del OB: {ob_direction}")
                             
                             # Solo generar señal LONG si H1 o H4 son alcistas
                             if ob_direction == 'LONG' and overall_bias != 'ALCISTA':
-                                print(f"   ⚠️ OB alcista ignorado - H1/H4 no son alcistas")
+                                # print(f"   ⚠️ OB alcista ignorado - H1/H4 no son alcistas")
                                 continue
                             
                             # Solo generar señal SHORT si H1 o H4 son bajistas  
                             if ob_direction == 'SHORT' and overall_bias != 'BAJISTA':
-                                print(f"   ⚠️ OB bajista ignorado - H1/H4 no son bajistas")
+                                # print(f"   ⚠️ OB bajista ignorado - H1/H4 no son bajistas")
                                 continue
                             
-                            print(f"   🔍 DEBUG - OB validado, buscando vela de rechazo...")
+                            # print(f"   🔍 DEBUG - OB validado, buscando vela de rechazo...")
                             
                             # Buscar velas de rechazo
                             rejection_signal = self._detect_rejection_candle(
@@ -453,44 +453,46 @@ class ICCStrategy:
                             else:
                                 print(f"   ⚠️ No se detectó vela de rechazo en OB")
                         else:
-                            print(f"   🔍 DEBUG - Precio fuera del OB")
+                            # print(f"   🔍 DEBUG - Precio fuera del OB")
+                            pass
                     else:
-                        print(f"   🔍 DEBUG - OB no válido (valor: {ob['OB']})")
+                        # print(f"   🔍 DEBUG - OB no válido (valor: {ob['OB']})")
+                        pass
                 
                 # Verificar si el precio está cerca de un FVG
                 for _, fvg in fvg_data.iterrows():
-                    # DEBUG: Mostrar información del FVG actual
-                    print(f"   🔍 DEBUG - Procesando FVG: {fvg.to_dict()}")
+                    # DEBUG: Mostrar información del FVG actual (comentado)
+                    # print(f"   🔍 DEBUG - Procesando FVG: {fvg.to_dict()}")
                     
                     if not pd.isna(fvg['FVG']):  # Si es un FVG válido
                         fvg_top = fvg['Top']
                         fvg_bottom = fvg['Bottom']
                         
-                        print(f"   🔍 DEBUG - FVG válido encontrado:")
-                        print(f"      • FVG value: {fvg['FVG']} (tipo: {type(fvg['FVG'])})")
-                        print(f"      • Top: {fvg_top}")
-                        print(f"      • Bottom: {fvg_bottom}")
-                        print(f"      • Current price: {current_price}")
+                        # print(f"   🔍 DEBUG - FVG válido encontrado:")
+                        # print(f"      • FVG value: {fvg['FVG']} (tipo: {type(fvg['FVG'])})")
+                        # print(f"      • Top: {fvg_top}")
+                        # print(f"      • Bottom: {fvg_bottom}")
+                        # print(f"      • Current price: {current_price}")
                         
                         # Verificar si el precio está dentro o cerca del FVG
                         if fvg_bottom <= current_price <= fvg_top:
-                            print(f"   🔍 DEBUG - Precio dentro del FVG")
+                            # print(f"   🔍 DEBUG - Precio dentro del FVG")
                             
                             # VALIDAR DIRECCIÓN CON TIMEFRAMES SUPERIORES
                             fvg_direction = 'LONG' if fvg['FVG'] == 1 else 'SHORT'
-                            print(f"   🔍 DEBUG - Dirección del FVG: {fvg_direction}")
+                            # print(f"   🔍 DEBUG - Dirección del FVG: {fvg_direction}")
                             
                             # Solo generar señal LONG si H1 o H4 son alcistas
                             if fvg_direction == 'LONG' and overall_bias != 'ALCISTA':
-                                print(f"   ⚠️ FVG alcista ignorado - H1/H4 no son alcistas")
+                                # print(f"   ⚠️ FVG alcista ignorado - H1/H4 no son alcistas")
                                 continue
                             
                             # Solo generar señal SHORT si H1 o H4 son bajistas
                             if fvg_direction == 'SHORT' and overall_bias != 'BAJISTA':
-                                print(f"   ⚠️ FVG bajista ignorado - H1/H4 no son bajistas")
+                                # print(f"   ⚠️ FVG bajista ignorado - H1/H4 no son bajistas")
                                 continue
                             
-                            print(f"   🔍 DEBUG - FVG validado, buscando vela de rechazo...")
+                            # print(f"   🔍 DEBUG - FVG validado, buscando vela de rechazo...")
                             
                             # Buscar velas de rechazo
                             rejection_signal = self._detect_rejection_candle(
@@ -513,9 +515,11 @@ class ICCStrategy:
                             else:
                                 print(f"   ⚠️ No se detectó vela de rechazo en FVG")
                         else:
-                            print(f"   🔍 DEBUG - Precio fuera del FVG")
+                            # print(f"   🔍 DEBUG - Precio fuera del FVG")
+                            pass
                     else:
-                        print(f"   🔍 DEBUG - FVG no válido (valor: {fvg['FVG']})")
+                        # print(f"   🔍 DEBUG - FVG no válido (valor: {fvg['FVG']})")
+                        pass
             
             print(f"   📊 Total de señales de pullback: {len(pullback_signals)}")
             
@@ -696,11 +700,178 @@ class ICCStrategy:
         
         return None
     
-    def calculate_risk_reward(self, signal: Dict, df: pd.DataFrame) -> Dict:
+    def calculate_structural_take_profits(self, df: pd.DataFrame, entry_price: float, direction: str, 
+                                        df_1h: pd.DataFrame = None, df_4h: pd.DataFrame = None) -> Dict:
+        """
+        Calcular Take Profits basándose en niveles estructurales
+        
+        Parámetros:
+        -----------
+        df : DataFrame
+            Datos del timeframe de operación (5M)
+        entry_price : float
+            Precio de entrada
+        direction : str
+            Dirección de la operación ('LONG' o 'SHORT')
+        df_1h : DataFrame
+            Datos de 1H para análisis de marco mayor
+        df_4h : DataFrame
+            Datos de 4H para análisis de marco mayor
+        
+        Retorna:
+        --------
+        Dict con niveles de TP estructurales
+        """
+        try:
+            tp_levels = {
+                'tp1': None,  # R:R 1:1 mínimo
+                'tp2': None,  # R:R 1:2
+                'tp3': None,  # R:R 1:3
+                'structural_levels': []
+            }
+            
+            # 1. IDENTIFICAR SWING HIGHS/LOWS EN TIMEFRAMES SUPERIORES
+            structural_levels = []
+            
+            # Analizar 1H si está disponible
+            if df_1h is not None and len(df_1h) > 20:
+                swing_1h = smc.swing_highs_lows(df_1h, swing_length=10)
+                if not swing_1h.empty:
+                    # Obtener niveles significativos
+                    swing_highs_1h = swing_1h[swing_1h['HighLow'] == 1]['Level'].dropna()
+                    swing_lows_1h = swing_1h[swing_1h['HighLow'] == -1]['Level'].dropna()
+                    
+                    if direction == 'LONG':
+                        # Para LONG, buscar swing highs (resistencias) por encima del precio
+                        resistance_levels = swing_highs_1h[swing_highs_1h > entry_price].sort_values()
+                        if len(resistance_levels) > 0:
+                            structural_levels.extend(resistance_levels.head(3).tolist())
+                    else:  # SHORT
+                        # Para SHORT, buscar swing lows (soportes) por debajo del precio
+                        support_levels = swing_lows_1h[swing_lows_1h < entry_price].sort_values(ascending=False)
+                        if len(support_levels) > 0:
+                            structural_levels.extend(support_levels.head(3).tolist())
+            
+            # Analizar 4H si está disponible
+            if df_4h is not None and len(df_4h) > 20:
+                swing_4h = smc.swing_highs_lows(df_4h, swing_length=10)
+                if not swing_4h.empty:
+                    swing_highs_4h = swing_4h[swing_4h['HighLow'] == 1]['Level'].dropna()
+                    swing_lows_4h = swing_4h[swing_4h['HighLow'] == -1]['Level'].dropna()
+                    
+                    if direction == 'LONG':
+                        resistance_levels_4h = swing_highs_4h[swing_highs_4h > entry_price].sort_values()
+                        if len(resistance_levels_4h) > 0:
+                            structural_levels.extend(resistance_levels_4h.head(2).tolist())
+                    else:  # SHORT
+                        support_levels_4h = swing_lows_4h[swing_lows_4h < entry_price].sort_values(ascending=False)
+                        if len(support_levels_4h) > 0:
+                            structural_levels.extend(support_levels_4h.head(2).tolist())
+            
+            # 2. IDENTIFICAR ZONAS DE LIQUIDEZ
+            # Buscar niveles donde hay alta actividad de volumen
+            if len(df) > 20:
+                volume_profile = df['volume'].rolling(window=10).mean()
+                high_volume_levels = df[volume_profile > volume_profile.quantile(0.8)]
+                
+                if direction == 'LONG':
+                    # Para LONG, buscar niveles de alta liquidez por encima
+                    liquidity_levels = high_volume_levels[high_volume_levels['high'] > entry_price]['high'].unique()
+                    structural_levels.extend(liquidity_levels[:3].tolist())
+                else:  # SHORT
+                    # Para SHORT, buscar niveles de alta liquidez por debajo
+                    liquidity_levels = high_volume_levels[high_volume_levels['low'] < entry_price]['low'].unique()
+                    structural_levels.extend(liquidity_levels[:3].tolist())
+            
+            # 3. IDENTIFICAR EQUAL LOWS/HIGHS
+            if len(df) > 50:
+                swing_data = smc.swing_highs_lows(df, swing_length=10)
+                if not swing_data.empty:
+                    if direction == 'LONG':
+                        # Buscar equal highs (resistencias)
+                        swing_highs = swing_data[swing_data['HighLow'] == 1]['Level'].dropna()
+                        equal_highs = self._find_equal_levels(swing_highs, tolerance=0.001)
+                        structural_levels.extend([level for level in equal_highs if level > entry_price][:2])
+                    else:  # SHORT
+                        # Buscar equal lows (soportes)
+                        swing_lows = swing_data[swing_data['HighLow'] == -1]['Level'].dropna()
+                        equal_lows = self._find_equal_levels(swing_lows, tolerance=0.001)
+                        structural_levels.extend([level for level in equal_lows if level < entry_price][:2])
+            
+            # 4. CALCULAR TP BASÁNDOSE EN NIVELES ESTRUCTURALES
+            if structural_levels:
+                # Ordenar niveles según la dirección
+                if direction == 'LONG':
+                    structural_levels = sorted([level for level in structural_levels if level > entry_price])
+                else:  # SHORT
+                    structural_levels = sorted([level for level in structural_levels if level < entry_price], reverse=True)
+                
+                # Asignar TP1, TP2, TP3 a los niveles más cercanos
+                if len(structural_levels) >= 1:
+                    tp_levels['tp1'] = structural_levels[0]
+                if len(structural_levels) >= 2:
+                    tp_levels['tp2'] = structural_levels[1]
+                if len(structural_levels) >= 3:
+                    tp_levels['tp3'] = structural_levels[2]
+                
+                tp_levels['structural_levels'] = structural_levels[:5]  # Guardar hasta 5 niveles
+            
+            return tp_levels
+            
+        except Exception as e:
+            print(f"   ❌ Error calculando TP estructurales: {e}")
+            return {
+                'tp1': None,
+                'tp2': None, 
+                'tp3': None,
+                'structural_levels': []
+            }
+    
+    def _find_equal_levels(self, levels: pd.Series, tolerance: float = 0.001) -> List[float]:
+        """
+        Encontrar niveles iguales o muy cercanos (equal highs/lows)
+        
+        Parámetros:
+        -----------
+        levels : pd.Series
+            Serie de niveles de precio
+        tolerance : float
+            Tolerancia para considerar niveles iguales
+        
+        Retorna:
+        --------
+        Lista de niveles agrupados
+        """
+        if len(levels) == 0:
+            return []
+        
+        levels = levels.sort_values()
+        equal_levels = []
+        
+        i = 0
+        while i < len(levels):
+            current_level = levels.iloc[i]
+            group = [current_level]
+            
+            # Buscar niveles cercanos
+            j = i + 1
+            while j < len(levels) and abs(levels.iloc[j] - current_level) <= tolerance:
+                group.append(levels.iloc[j])
+                j += 1
+            
+            # Calcular promedio del grupo
+            avg_level = sum(group) / len(group)
+            equal_levels.append(avg_level)
+            
+            i = j
+        
+        return equal_levels
+    
+    def calculate_risk_reward(self, signal: Dict, df: pd.DataFrame, df_1h: pd.DataFrame = None, df_4h: pd.DataFrame = None) -> Dict:
         """
         6. GESTIÓN DE LA OPERACIÓN
         
-        Calcula Stop Loss, Take Profit y ratio riesgo/beneficio.
+        Calcula Stop Loss, Take Profit y ratio riesgo/beneficio usando niveles estructurales.
         
         Parámetros:
         -----------
@@ -708,6 +879,10 @@ class ICCStrategy:
             Señal confirmada
         df : DataFrame
             Datos OHLC para cálculos
+        df_1h : DataFrame
+            Datos de 1H para análisis estructural
+        df_4h : DataFrame
+            Datos de 4H para análisis estructural
         
         Retorna:
         --------
@@ -728,10 +903,6 @@ class ICCStrategy:
                 else:
                     stop_loss = entry_price * 0.995  # 0.5% por defecto
                     
-                # Take Profit: R:R 1:1 (mínimo requerido para operar)
-                risk = entry_price - stop_loss
-                take_profit = entry_price + (risk * 1.0)  # R:R 1:1 mínimo
-                
             else:  # SHORT
                 if 'ob_top' in signal:
                     stop_loss = signal['ob_top'] * 1.001  # Justo fuera del OB
@@ -739,42 +910,58 @@ class ICCStrategy:
                     stop_loss = signal['fvg_top'] * 1.001  # Justo fuera del FVG
                 else:
                     stop_loss = entry_price * 1.005  # 0.5% por defecto
-                    
-                # Take Profit: R:R 1:1 (mínimo requerido para operar)
-                risk = stop_loss - entry_price
-                take_profit = entry_price - (risk * 1.0)  # R:R 1:1 mínimo
             
-            # Calcular R:R
+            # Calcular Take Profits estructurales
+            tp_levels = self.calculate_structural_take_profits(df, entry_price, direction, df_1h, df_4h)
+            
+            # Si no hay niveles estructurales, usar R:R tradicional
+            if tp_levels['tp1'] is None:
+                risk = abs(entry_price - stop_loss)
+                if direction == 'LONG':
+                    tp_levels['tp1'] = entry_price + (risk * 1.0)  # R:R 1:1
+                    tp_levels['tp2'] = entry_price + (risk * 2.0)  # R:R 1:2
+                    tp_levels['tp3'] = entry_price + (risk * 3.0)  # R:R 1:3
+                else:  # SHORT
+                    tp_levels['tp1'] = entry_price - (risk * 1.0)  # R:R 1:1
+                    tp_levels['tp2'] = entry_price - (risk * 2.0)  # R:R 1:2
+                    tp_levels['tp3'] = entry_price - (risk * 3.0)  # R:R 1:3
+            
+            # Calcular R:R para TP1
             risk_amount = abs(entry_price - stop_loss)
-            reward_amount = abs(take_profit - entry_price)
+            reward_amount = abs(tp_levels['tp1'] - entry_price)
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
             # Verificar si cumple R:R mínimo
-            meets_min_ratio = risk_reward_ratio >= self.risk_reward_min
+            if risk_reward_ratio < self.risk_reward_min:
+                print(f"   ⚠️ R:R {risk_reward_ratio:.2f} no cumple mínimo {self.risk_reward_min}")
+                return None
             
-            risk_management = {
+            result = {
                 'entry_price': entry_price,
                 'stop_loss': stop_loss,
-                'take_profit': take_profit,
+                'take_profit': tp_levels['tp1'],
+                'risk_reward_ratio': risk_reward_ratio,
                 'risk_amount': risk_amount,
                 'reward_amount': reward_amount,
-                'risk_reward_ratio': risk_reward_ratio,
-                'meets_min_ratio': meets_min_ratio,
-                'direction': direction
+                'tp_levels': tp_levels,
+                'meets_minimum_rr': True
             }
             
             print(f"   ✅ Gestión de riesgo calculada:")
             print(f"      • Entrada: {entry_price:.5f}")
             print(f"      • Stop Loss: {stop_loss:.5f}")
-            print(f"      • Take Profit: {take_profit:.5f}")
+            print(f"      • Take Profit: {tp_levels['tp1']:.5f}")
             print(f"      • R:R: 1:{risk_reward_ratio:.2f}")
-            print(f"      • Cumple R:R mínimo: {'✅' if meets_min_ratio else '❌'}")
+            print(f"      • Cumple R:R mínimo: ✅")
             
-            return risk_management
+            if tp_levels['structural_levels']:
+                print(f"      • Niveles estructurales: {[f'{level:.5f}' for level in tp_levels['structural_levels'][:3]]}")
+            
+            return result
             
         except Exception as e:
             print(f"   ❌ Error calculando gestión de riesgo: {e}")
-            return {}
+            return None
     
     def scan_for_icc_signals(self, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> List[Dict]:
         """
@@ -841,7 +1028,7 @@ class ICCStrategy:
             # 6. Calcular gestión de riesgo para cada señal
             final_signals = []
             for signal in confirmed_signals:
-                risk_management = self.calculate_risk_reward(signal, df_5m)
+                risk_management = self.calculate_risk_reward(signal, df_5m, df_1h, df_4h)
                 
                 if risk_management and risk_management.get('meets_min_ratio', False):
                     # Agregar gestión de riesgo a la señal

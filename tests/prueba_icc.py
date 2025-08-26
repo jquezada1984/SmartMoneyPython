@@ -42,6 +42,14 @@ class ICCStrategyBacktrader(bt.Strategy):
         ('printlog', True),        # Imprimir logs
     )
     
+    # Configurar líneas para el gráfico
+    lines = ('buy_signal', 'sell_signal',)
+    plotinfo = dict(plot=True, subplot=False)
+    plotlines = dict(
+        buy_signal=dict(marker='^', markersize=8.0, color='green', fillstyle='full'),
+        sell_signal=dict(marker='v', markersize=8.0, color='red', fillstyle='full'),
+    )
+    
     def __init__(self):
         """Inicializar la estrategia"""
         # Inicializar la estrategia ICC real
@@ -70,13 +78,15 @@ class ICCStrategyBacktrader(bt.Strategy):
         # Lista para almacenar resultados de operaciones
         self.trades = []
         
+        # Variables para señales de entrada
+        self.buy_signal_price = None
+        self.sell_signal_price = None
+        
         # Indicadores técnicos
         self.macd = bt.indicators.MACD(self.data.close)
         self.rsi = bt.indicators.RSI(self.data.close)
         
-        # Medias móviles para confirmación de tendencia
-        self.sma_fast = bt.indicators.SMA(self.data.close, period=10)
-        self.sma_slow = bt.indicators.SMA(self.data.close, period=20)
+        # Indicadores técnicos (sin SMA)
         
         # Volumen promedio para confirmación
         self.volume_sma = bt.indicators.SMA(self.data.volume, period=20)
@@ -193,21 +203,21 @@ class ICCStrategyBacktrader(bt.Strategy):
                     h1_trend = 0.0  # LATERAL
                     h4_trend = 0.0  # LATERAL
                     
-                self.log(f"📊 SMC detectó tendencia: {current_trend:.2f} → 1H:{h1_trend:.1f}, 4H:{h4_trend:.1f}")
+                # self.log(f"📊 SMC detectó tendencia: {current_trend:.2f} → 1H:{h1_trend:.1f}, 4H:{h4_trend:.1f}")
                     
             except Exception as e:
                 # Fallback a análisis simple si SMC falla
-                if self.sma_fast[0] > self.sma_slow[0] and self.rsi[0] > 50:
+                if self.rsi[0] > 50 and self.data.close[0] > self.data.close[-5]:
                     h1_trend = 0.7  # ALCISTA
                     h4_trend = 0.6  # ALCISTA
-                elif self.sma_fast[0] < self.sma_slow[0] and self.rsi[0] < 50:
+                elif self.rsi[0] < 50 and self.data.close[0] < self.data.close[-5]:
                     h1_trend = -0.7  # BAJISTA
                     h4_trend = -0.6  # BAJISTA
                 else:
                     h1_trend = 0.0  # LATERAL
                     h4_trend = 0.0  # LATERAL
                 
-                self.log(f"📊 Fallback detectó tendencia: 1H:{h1_trend:.1f}, 4H:{h4_trend:.1f}")
+                # self.log(f"📊 Fallback detectó tendencia: 1H:{h1_trend:.1f}, 4H:{h4_trend:.1f}")
             
             # Determinar sesgo general (como en implementacion_icc.py)
             if h1_trend > 0.5 or h4_trend > 0.5:
@@ -282,8 +292,8 @@ class ICCStrategyBacktrader(bt.Strategy):
             
             conditions_met = sum([price_rising, volume_ok, rsi_not_overbought])
             
-            if len(self.data) % 50 == 0:
-                self.log(f"🔍 COMPRA Fallback - Precio:{price_rising}, Vol:{volume_ok}, RSI:{rsi_not_overbought}, Condiciones:{conditions_met}/3")
+            # if len(self.data) % 50 == 0:
+            #     self.log(f"🔍 COMPRA Fallback - Precio:{price_rising}, Vol:{volume_ok}, RSI:{rsi_not_overbought}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -337,8 +347,8 @@ class ICCStrategyBacktrader(bt.Strategy):
             
             conditions_met = sum([price_falling, volume_ok, rsi_not_oversold])
             
-            if len(self.data) % 50 == 0:
-                self.log(f"🔍 VENTA Fallback - Precio:{price_falling}, Vol:{volume_ok}, RSI:{rsi_not_oversold}, Condiciones:{conditions_met}/3")
+            # if len(self.data) % 50 == 0:
+            #     self.log(f"🔍 VENTA Fallback - Precio:{price_falling}, Vol:{volume_ok}, RSI:{rsi_not_oversold}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -364,6 +374,10 @@ class ICCStrategyBacktrader(bt.Strategy):
     def next(self):
         """Lógica principal de la estrategia - ejecutada en cada vela"""
         try:
+            # Inicializar señales en cada vela
+            self.lines.buy_signal[0] = np.nan
+            self.lines.sell_signal[0] = np.nan
+            
             # Solo operar si no hay órdenes pendientes
             if self.order:
                 return
@@ -381,9 +395,13 @@ class ICCStrategyBacktrader(bt.Strategy):
             # Lógica de entrada simplificada para generar más operaciones
             if self.should_enter_long():
                 self.log(f"🎯 SEÑAL COMPRA DETECTADA - Verificando condiciones...")
+                # Marcar señal de compra en el gráfico
+                self.lines.buy_signal[0] = self.data.low[0] * 0.999  # Justo debajo del low
                 self.enter_long()
             elif self.should_enter_short():
                 self.log(f"🎯 SEÑAL VENTA DETECTADA - Verificando condiciones...")
+                # Marcar señal de venta en el gráfico
+                self.lines.sell_signal[0] = self.data.high[0] * 1.001  # Justo encima del high
                 self.enter_short()
                 
         except Exception as e:
@@ -408,11 +426,31 @@ class ICCStrategyBacktrader(bt.Strategy):
                 
             stop_loss = min(low_values)
             
-            # Take Profit: R:R 1:1, 1:2, 1:3
-            risk_distance = entry_price - stop_loss
-            tp1 = entry_price + (risk_distance * 1.0)  # R:R 1:1
-            tp2 = entry_price + (risk_distance * 2.0)  # R:R 1:2
-            tp3 = entry_price + (risk_distance * 3.0)  # R:R 1:3
+            # Calcular Take Profits estructurales usando la estrategia ICC
+            current_df = pd.DataFrame({
+                'open': [self.data.open[i] for i in range(-50, 0)],
+                'high': [self.data.high[i] for i in range(-50, 0)],
+                'low': [self.data.low[i] for i in range(-50, 0)],
+                'close': [self.data.close[i] for i in range(-50, 0)],
+                'volume': [self.data.volume[i] for i in range(-50, 0)]
+            })
+            
+            # Usar la estrategia ICC para calcular TP estructurales
+            tp_levels = self.icc_strategy.calculate_structural_take_profits(
+                current_df, entry_price, 'LONG', current_df, current_df
+            )
+            
+            # Usar TP estructurales si están disponibles, sino usar R:R tradicional
+            if tp_levels['tp1'] is not None:
+                tp1 = tp_levels['tp1']
+                tp2 = tp_levels['tp2'] if tp_levels['tp2'] is not None else entry_price + (risk_distance * 2.0)
+                tp3 = tp_levels['tp3'] if tp_levels['tp3'] is not None else entry_price + (risk_distance * 3.0)
+            else:
+                # Fallback a R:R tradicional
+                risk_distance = entry_price - stop_loss
+                tp1 = entry_price + (risk_distance * 1.0)  # R:R 1:1
+                tp2 = entry_price + (risk_distance * 2.0)  # R:R 1:2
+                tp3 = entry_price + (risk_distance * 3.0)  # R:R 1:3
             
             # Calcular tamaño de posición (0.5% del capital por operación - más conservador)
             risk_amount = self.broker.getvalue() * 0.005
@@ -455,11 +493,31 @@ class ICCStrategyBacktrader(bt.Strategy):
                 
             stop_loss = max(high_values)
             
-            # Take Profit: R:R 1:1, 1:2, 1:3
-            risk_distance = stop_loss - entry_price
-            tp1 = entry_price - (risk_distance * 1.0)  # R:R 1:1
-            tp2 = entry_price - (risk_distance * 2.0)  # R:R 1:2
-            tp3 = entry_price - (risk_distance * 3.0)  # R:R 1:3
+            # Calcular Take Profits estructurales usando la estrategia ICC
+            current_df = pd.DataFrame({
+                'open': [self.data.open[i] for i in range(-50, 0)],
+                'high': [self.data.high[i] for i in range(-50, 0)],
+                'low': [self.data.low[i] for i in range(-50, 0)],
+                'close': [self.data.close[i] for i in range(-50, 0)],
+                'volume': [self.data.volume[i] for i in range(-50, 0)]
+            })
+            
+            # Usar la estrategia ICC para calcular TP estructurales
+            tp_levels = self.icc_strategy.calculate_structural_take_profits(
+                current_df, entry_price, 'SHORT', current_df, current_df
+            )
+            
+            # Usar TP estructurales si están disponibles, sino usar R:R tradicional
+            if tp_levels['tp1'] is not None:
+                tp1 = tp_levels['tp1']
+                tp2 = tp_levels['tp2'] if tp_levels['tp2'] is not None else entry_price - (risk_distance * 2.0)
+                tp3 = tp_levels['tp3'] if tp_levels['tp3'] is not None else entry_price - (risk_distance * 3.0)
+            else:
+                # Fallback a R:R tradicional
+                risk_distance = stop_loss - entry_price
+                tp1 = entry_price - (risk_distance * 1.0)  # R:R 1:1
+                tp2 = entry_price - (risk_distance * 2.0)  # R:R 1:2
+                tp3 = entry_price - (risk_distance * 3.0)  # R:R 1:3
             
             # Calcular tamaño de posición (0.5% del capital por operación - más conservador)
             risk_amount = self.broker.getvalue() * 0.005
