@@ -141,7 +141,7 @@ class ICCStrategyBacktrader(bt.Strategy):
             'entry_date': self.data.datetime.date(0).isoformat(),
             'exit_date': self.data.datetime.date(0).isoformat(),
             'entry_price': trade.price,
-            'exit_price': trade.price2,
+            'exit_price': trade.price,  # Usar trade.price en lugar de trade.price2
             'size': trade.size,
             'pnl': pnl,
             'pnl_net': pnlcomm,
@@ -237,26 +237,53 @@ class ICCStrategyBacktrader(bt.Strategy):
             }
     
     def should_enter_long(self):
-        """Verificar si se debe entrar en posición larga"""
+        """Verificar si se debe entrar en posición larga usando la estrategia ICC real"""
         try:
             # Verificar que tenemos suficientes datos
-            if len(self.data) < 20:
+            if len(self.data) < 50:
                 return False
             
-            # Condiciones más simples y menos restrictivas para generar más operaciones
-            # Solo verificar que el precio esté subiendo y el volumen sea positivo
-            price_rising = self.data.close[0] > self.data.close[-1]  # Precio actual > anterior
-            volume_ok = self.data.volume[0] > 0  # Volumen positivo
+            # Analizar timeframes superiores
+            tf_analysis = self.analyze_higher_timeframes()
             
-            # Condición adicional: RSI no en sobrecompra extrema
+            # Solo entrar LONG si el sesgo es ALCISTA
+            if tf_analysis['overall_bias'] != 'ALCISTA':
+                return False
+            
+            # Crear DataFrame con los datos actuales para la estrategia ICC
+            current_df = pd.DataFrame({
+                'open': [self.data.open[i] for i in range(-50, 0)],
+                'high': [self.data.high[i] for i in range(-50, 0)],
+                'low': [self.data.low[i] for i in range(-50, 0)],
+                'close': [self.data.close[i] for i in range(-50, 0)],
+                'volume': [self.data.volume[i] for i in range(-50, 0)]
+            })
+            
+            # Usar la estrategia ICC real para detectar señales
+            try:
+                icc_signals = self.icc_strategy.scan_for_icc_signals(
+                    df_5m=current_df,
+                    df_1h=current_df,  # Usar los mismos datos como aproximación
+                    df_4h=current_df   # Usar los mismos datos como aproximación
+                )
+                
+                # Si hay señales ICC, considerar como señal de entrada
+                if icc_signals:
+                    self.log(f"🎯 Señal ICC de COMPRA detectada")
+                    return True
+                    
+            except Exception as e:
+                self.log(f"Error en estrategia ICC: {e}")
+            
+            # Fallback a condiciones simples si ICC falla
+            price_rising = self.data.close[0] > self.data.close[-1]
+            volume_ok = self.data.volume[0] > 0
             rsi_not_overbought = self.rsi[0] < 80
             
-            # Al menos 2 de 3 condiciones deben cumplirse
             conditions_met = sum([price_rising, volume_ok, rsi_not_overbought])
             
-            # Logging para debug (cada 50 velas para no saturar)
             if len(self.data) % 50 == 0:
-                self.log(f"🔍 COMPRA - Precio:{price_rising}, Vol:{volume_ok}, RSI:{rsi_not_overbought}, Condiciones:{conditions_met}/3")
+                self.log(f"🔍 COMPRA Fallback - Precio:{price_rising}, Vol:{volume_ok}, RSI:{rsi_not_overbought}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -265,26 +292,53 @@ class ICCStrategyBacktrader(bt.Strategy):
             return False
     
     def should_enter_short(self):
-        """Verificar si se debe entrar en posición corta"""
+        """Verificar si se debe entrar en posición corta usando la estrategia ICC real"""
         try:
             # Verificar que tenemos suficientes datos
-            if len(self.data) < 20:
+            if len(self.data) < 50:
                 return False
             
-            # Condiciones más simples y menos restrictivas para generar más operaciones
-            # Solo verificar que el precio esté bajando y el volumen sea positivo
-            price_falling = self.data.close[0] < self.data.close[-1]  # Precio actual < anterior
-            volume_ok = self.data.volume[0] > 0  # Volumen positivo
+            # Analizar timeframes superiores
+            tf_analysis = self.analyze_higher_timeframes()
             
-            # Condición adicional: RSI no en sobreventa extrema
+            # Solo entrar SHORT si el sesgo es BAJISTA
+            if tf_analysis['overall_bias'] != 'BAJISTA':
+                return False
+            
+            # Crear DataFrame con los datos actuales para la estrategia ICC
+            current_df = pd.DataFrame({
+                'open': [self.data.open[i] for i in range(-50, 0)],
+                'high': [self.data.high[i] for i in range(-50, 0)],
+                'low': [self.data.low[i] for i in range(-50, 0)],
+                'close': [self.data.close[i] for i in range(-50, 0)],
+                'volume': [self.data.volume[i] for i in range(-50, 0)]
+            })
+            
+            # Usar la estrategia ICC real para detectar señales
+            try:
+                icc_signals = self.icc_strategy.scan_for_icc_signals(
+                    df_5m=current_df,
+                    df_1h=current_df,  # Usar los mismos datos como aproximación
+                    df_4h=current_df   # Usar los mismos datos como aproximación
+                )
+                
+                # Si hay señales ICC, considerar como señal de entrada
+                if icc_signals:
+                    self.log(f"🎯 Señal ICC de VENTA detectada")
+                    return True
+                    
+            except Exception as e:
+                self.log(f"Error en estrategia ICC: {e}")
+            
+            # Fallback a condiciones simples si ICC falla
+            price_falling = self.data.close[0] < self.data.close[-1]
+            volume_ok = self.data.volume[0] > 0
             rsi_not_oversold = self.rsi[0] > 20
             
-            # Al menos 2 de 3 condiciones deben cumplirse
             conditions_met = sum([price_falling, volume_ok, rsi_not_oversold])
             
-            # Logging para debug (cada 50 velas para no saturar)
             if len(self.data) % 50 == 0:
-                self.log(f"🔍 VENTA - Precio:{price_falling}, Vol:{volume_ok}, RSI:{rsi_not_oversold}, Condiciones:{conditions_met}/3")
+                self.log(f"🔍 VENTA Fallback - Precio:{price_falling}, Vol:{volume_ok}, RSI:{rsi_not_oversold}, Condiciones:{conditions_met}/3")
             
             return conditions_met >= 2
             
@@ -293,21 +347,15 @@ class ICCStrategyBacktrader(bt.Strategy):
             return False
     
     def calculate_position_size(self, risk_amount, stop_loss):
-        """Calcular tamaño de posición basado en gestión de riesgo"""
+        """Calcular tamaño de posición - Usar lotaje fijo de 0.01 para forex"""
         try:
-            if stop_loss == 0:
-                return 0
+            # Para forex, usar lotaje fijo de 0.01 (1 mini lot = 10,000 unidades)
+            # 0.01 lot = 1,000 unidades
+            lot_size = 0.01
+            position_size = lot_size * 100000  # Convertir lot a unidades
             
-            # Calcular riesgo por unidad
-            risk_per_unit = abs(self.data.close[0] - stop_loss)
-            if risk_per_unit == 0:
-                return 0
-            
-            # Calcular tamaño de posición
-            position_size = risk_amount / risk_per_unit
-            
-            # Redondear a 2 decimales
-            return round(position_size, 2)
+            self.log(f"📏 Tamaño de posición fijo: {lot_size} lot = {position_size} unidades")
+            return position_size
             
         except Exception as e:
             self.log(f"Error calculando tamaño de posición: {e}")
@@ -366,12 +414,12 @@ class ICCStrategyBacktrader(bt.Strategy):
             tp2 = entry_price + (risk_distance * 2.0)  # R:R 1:2
             tp3 = entry_price + (risk_distance * 3.0)  # R:R 1:3
             
-            # Calcular tamaño de posición (1% del capital por operación)
-            risk_amount = self.broker.getvalue() * 0.01
+            # Calcular tamaño de posición (0.5% del capital por operación - más conservador)
+            risk_amount = self.broker.getvalue() * 0.005
             position_size = self.calculate_position_size(risk_amount, stop_loss)
             
             if position_size > 0:
-                # Entrar en la posición
+                # Entrar en la posición con lotaje fijo
                 self.order = self.buy(size=position_size)
                 
                 self.log(f'🎯 SEÑAL COMPRA DETECTADA')
@@ -380,10 +428,10 @@ class ICCStrategyBacktrader(bt.Strategy):
                 self.log(f'   🎯 TP1 (1:1): {tp1:.5f}')
                 self.log(f'   🎯 TP2 (1:2): {tp2:.5f}')
                 self.log(f'   🎯 TP3 (1:3): {tp3:.5f}')
-                self.log(f'   📏 Tamaño: {position_size}')
+                self.log(f'   📏 Tamaño: 0.01 lot ({position_size} unidades)')
                 self.log(f'   💰 Riesgo: ${risk_amount:.2f}')
             else:
-                self.log(f'⚠️ Tamaño de posición calculado es 0 - No se ejecuta COMPRA')
+                self.log(f'⚠️ Error al calcular tamaño de posición - No se ejecuta COMPRA')
                 
         except Exception as e:
             self.log(f"Error en enter_long: {e}")
@@ -413,12 +461,12 @@ class ICCStrategyBacktrader(bt.Strategy):
             tp2 = entry_price - (risk_distance * 2.0)  # R:R 1:2
             tp3 = entry_price - (risk_distance * 3.0)  # R:R 1:3
             
-            # Calcular tamaño de posición (1% del capital por operación)
-            risk_amount = self.broker.getvalue() * 0.01
+            # Calcular tamaño de posición (0.5% del capital por operación - más conservador)
+            risk_amount = self.broker.getvalue() * 0.005
             position_size = self.calculate_position_size(risk_amount, stop_loss)
             
             if position_size > 0:
-                # Entrar en la posición
+                # Entrar en la posición con lotaje fijo
                 self.order = self.sell(size=position_size)
                 
                 self.log(f'🎯 SEÑAL VENTA DETECTADA')
@@ -427,10 +475,10 @@ class ICCStrategyBacktrader(bt.Strategy):
                 self.log(f'   🎯 TP1 (1:1): {tp1:.5f}')
                 self.log(f'   🎯 TP2 (1:2): {tp2:.5f}')
                 self.log(f'   🎯 TP3 (1:3): {tp3:.5f}')
-                self.log(f'   📏 Tamaño: {position_size}')
+                self.log(f'   📏 Tamaño: 0.01 lot ({position_size} unidades)')
                 self.log(f'   💰 Riesgo: ${risk_amount:.2f}')
             else:
-                self.log(f'⚠️ Tamaño de posición calculado es 0 - No se ejecuta VENTA')
+                self.log(f'⚠️ Error al calcular tamaño de posición - No se ejecuta VENTA')
                 
         except Exception as e:
             self.log(f"Error en enter_short: {e}")
