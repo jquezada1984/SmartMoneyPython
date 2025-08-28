@@ -183,23 +183,39 @@ class ICCStrategy(bt.Strategy):
                         entry_price = self.data.close[0]
                         stop_loss = entry_price * 0.995  # 0.5% por defecto
                         
-                        # Calcular Take Profits para señales de respaldo
+                        # Calcular Take Profit estructural para señales de respaldo
                         risk_distance = entry_price - stop_loss
-                        tp1 = entry_price + risk_distance  # R:R 1:1
-                        tp2 = entry_price + (risk_distance * 2)  # R:R 1:2
-                        tp3 = entry_price + (risk_distance * 3)  # R:R 1:3
+                         
+                        # Calcular Take Profit basado en estructura (entre 1:1 y 1:3)
+                        # Usar ATR para determinar el nivel estructural
+                        atr_period = 14
+                        atr_values = []
+                        for i in range(1, atr_period + 1):
+                            if len(self.data) >= i:
+                                high = self.data.high[-i]
+                                low = self.data.low[-i]
+                                close = self.data.close[-i-1] if len(self.data) > i else self.data.close[-i]
+                                tr = max(high - low, abs(high - close), abs(low - close))
+                                atr_values.append(tr)
+                        
+                        if atr_values:
+                            atr = sum(atr_values) / len(atr_values)
+                            # Calcular R:R basado en estructura (entre 1.0 y 3.0)
+                            structural_rr = min(3.0, max(1.0, (atr * 2) / risk_distance))
+                            take_profit = entry_price + (risk_distance * structural_rr)
+                        else:
+                            # Fallback a R:R 1.5 si no hay suficientes datos
+                            take_profit = entry_price + (risk_distance * 1.5)
                         
                         self.current_position_info = {
                             'direction': 'LONG',
                             'entry_price': entry_price,
                             'stop_loss': stop_loss,
-                            'take_profit': tp1,
-                            'risk_reward_ratio': 1.0,
+                            'take_profit': take_profit,
+                            'risk_reward_ratio': structural_rr if atr_values else 1.5,
                             'tp_levels': {
-                                'tp1': tp1,
-                                'tp2': tp2,
-                                'tp3': tp3,
-                                'structural_levels': []
+                                'tp1': take_profit,  # Solo un TP estructural
+                                'structural_levels': [take_profit]
                             }
                         }
                         
@@ -215,23 +231,39 @@ class ICCStrategy(bt.Strategy):
                         entry_price = self.data.close[0]
                         stop_loss = entry_price * 1.005  # 0.5% por defecto
                         
-                        # Calcular Take Profits para señales de respaldo
+                        # Calcular Take Profit estructural para señales de respaldo
                         risk_distance = stop_loss - entry_price
-                        tp1 = entry_price - risk_distance  # R:R 1:1
-                        tp2 = entry_price - (risk_distance * 2)  # R:R 1:2
-                        tp3 = entry_price - (risk_distance * 3)  # R:R 1:3
+                         
+                        # Calcular Take Profit basado en estructura (entre 1:1 y 1:3)
+                        # Usar ATR para determinar el nivel estructural
+                        atr_period = 14
+                        atr_values = []
+                        for i in range(1, atr_period + 1):
+                            if len(self.data) >= i:
+                                high = self.data.high[-i]
+                                low = self.data.low[-i]
+                                close = self.data.close[-i-1] if len(self.data) > i else self.data.close[-i]
+                                tr = max(high - low, abs(high - close), abs(low - close))
+                                atr_values.append(tr)
+                        
+                        if atr_values:
+                            atr = sum(atr_values) / len(atr_values)
+                            # Calcular R:R basado en estructura (entre 1.0 y 3.0)
+                            structural_rr = min(3.0, max(1.0, (atr * 2) / risk_distance))
+                            take_profit = entry_price - (risk_distance * structural_rr)
+                        else:
+                            # Fallback a R:R 1.5 si no hay suficientes datos
+                            take_profit = entry_price - (risk_distance * 1.5)
                         
                         self.current_position_info = {
                             'direction': 'SHORT',
                             'entry_price': entry_price,
                             'stop_loss': stop_loss,
-                            'take_profit': tp1,
-                            'risk_reward_ratio': 1.0,
+                            'take_profit': take_profit,
+                            'risk_reward_ratio': structural_rr if atr_values else 1.5,
                             'tp_levels': {
-                                'tp1': tp1,
-                                'tp2': tp2,
-                                'tp3': tp3,
-                                'structural_levels': []
+                                'tp1': take_profit,  # Solo un TP estructural
+                                'structural_levels': [take_profit]
                             }
                         }
                         
@@ -261,32 +293,21 @@ class ICCStrategy(bt.Strategy):
         stop_loss = self.current_position_info['stop_loss']
         tp_levels = self.current_position_info.get('tp_levels', {})
         
-        # Obtener niveles de TP
-        tp1 = tp_levels.get('tp1')  # R:R 1:1
-        tp2 = tp_levels.get('tp2')  # R:R 1:2
-        tp3 = tp_levels.get('tp3')  # R:R 1:3
+        # Obtener Take Profit estructural
+        take_profit = self.current_position_info.get('take_profit')
+        rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
         
         if direction == 'LONG':
             # Verificar Stop Loss (precio por debajo del SL)
             if current_price <= stop_loss:
-                self.log(f"🛑 STOP LOSS - Precio: {current_price:.5f}")
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
                 
-            # Verificar Take Profits en orden de prioridad
-            if tp3 and current_price >= tp3:
-                self.log(f"🎯 TAKE PROFIT 1:3 - Precio: {current_price:.5f}")
-                self.close()
-                self.current_position_info = None
-                return
-            elif tp2 and current_price >= tp2:
-                self.log(f"🎯 TAKE PROFIT 1:2 - Precio: {current_price:.5f}")
-                self.close()
-                self.current_position_info = None
-                return
-            elif tp1 and current_price >= tp1:
-                self.log(f"🎯 TAKE PROFIT 1:1 - Precio: {current_price:.5f}")
+            # Verificar Take Profit estructural
+            if take_profit and current_price >= take_profit:
+                self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
                 self.current_position_info = None
                 return
@@ -294,24 +315,14 @@ class ICCStrategy(bt.Strategy):
         elif direction == 'SHORT':
             # Verificar Stop Loss (precio por encima del SL)
             if current_price >= stop_loss:
-                self.log(f"🛑 STOP LOSS - Precio: {current_price:.5f}")
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
                 
-            # Verificar Take Profits en orden de prioridad
-            if tp3 and current_price <= tp3:
-                self.log(f"🎯 TAKE PROFIT 1:3 - Precio: {current_price:.5f}")
-                self.close()
-                self.current_position_info = None
-                return
-            elif tp2 and current_price <= tp2:
-                self.log(f"🎯 TAKE PROFIT 1:2 - Precio: {current_price:.5f}")
-                self.close()
-                self.current_position_info = None
-                return
-            elif tp1 and current_price <= tp1:
-                self.log(f"🎯 TAKE PROFIT 1:1 - Precio: {current_price:.5f}")
+            # Verificar Take Profit estructural
+            if take_profit and current_price <= take_profit:
+                self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
                 self.current_position_info = None
                 return
@@ -323,9 +334,31 @@ class ICCStrategy(bt.Strategy):
         
         if order.status in [order.Completed]:
             if order.isbuy():
-                self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
+                # Mostrar información de gestión de riesgo para compras
+                if self.current_position_info and self.current_position_info['direction'] == 'LONG':
+                    stop_loss = self.current_position_info['stop_loss']
+                    take_profit = self.current_position_info['take_profit']
+                    rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
+                    
+                    self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
+                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
+                    self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
+                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
+                else:
+                    self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
             else:
-                self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
+                # Mostrar información de gestión de riesgo para ventas
+                if self.current_position_info and self.current_position_info['direction'] == 'SHORT':
+                    stop_loss = self.current_position_info['stop_loss']
+                    take_profit = self.current_position_info['take_profit']
+                    rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
+                    
+                    self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
+                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
+                    self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
+                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
+                else:
+                    self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
         
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.log('Orden Cancelada/Margin/Rechazada')
