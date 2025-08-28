@@ -1108,7 +1108,7 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     
     trend_values = []
     
-    # Almacenar la tendencia actual en el historial global por posición de frame
+    # Almacenar la tendencia actual en el historial global por posición des frame
     global_trend_history[pos] = base_trend
     
     # Aplicar la misma tendencia a todas las velas del frame actual

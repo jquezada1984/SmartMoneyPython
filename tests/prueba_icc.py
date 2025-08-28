@@ -59,10 +59,6 @@ class ICCStrategy(bt.Strategy):
         self.take_profit_levels = None
         
         print(f"🚀 Estrategia ICC SmartMoney inicializada")
-        print(f"   📊 RSI: {self.rsi.params.period}")
-        print(f"   📊 MACD: 12, 26, 9")
-        print(f"   🧠 SmartMoney ICC: R:R mínimo 1:{self.smartmoney_icc.risk_reward_min}")
-        print(f"   🛑 Stop Loss: Basado en Order Blocks y Fair Value Gaps")
         
     def log(self, txt, dt=None):
         """Función de logging"""
@@ -119,9 +115,17 @@ class ICCStrategy(bt.Strategy):
                     'volume': 'sum'
                 }).dropna()
                 
-                # Escanear señales SmartMoney ICC
-                self.log(f"🔍 Analizando SmartMoney ICC en vela {len(self.data)}")
-                signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h, df_4h)
+                # Escanear señales SmartMoney ICC (sin logging)
+                # Redirigir stdout temporalmente para suprimir mensajes internos
+                import io
+                import sys
+                old_stdout = sys.stdout
+                sys.stdout = io.StringIO()
+                
+                try:
+                    signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h, df_4h)
+                finally:
+                    sys.stdout = old_stdout
                 
                 if signals:
                     # Procesar señales SmartMoney
@@ -142,18 +146,8 @@ class ICCStrategy(bt.Strategy):
                         tp3 = tp_levels.get('tp3')  # R:R 1:3
                         structural_levels = tp_levels.get('structural_levels', [])
                         
-                        self.log(f"🎯 SEÑAL SMARTMONEY ICC: {direction}")
-                        self.log(f"   📊 Precio entrada: {entry_price:.5f}")
-                        self.log(f"   🛑 Stop Loss: {stop_loss:.5f}")
-                        self.log(f"   🎯 Take Profit 1:1: {tp1:.5f}")
-                        self.log(f"   🎯 Take Profit 1:2: {tp2:.5f}")
-                        self.log(f"   🎯 Take Profit 1:3: {tp3:.5f}")
-                        self.log(f"   📈 R:R: 1:{risk_reward_ratio:.2f}")
-                        self.log(f"   📈 RSI actual: {self.rsi[0]:.2f}")
-                        self.log(f"   📊 MACD actual: {self.macd.macd[0]:.5f}")
-                        
-                        if structural_levels:
-                            self.log(f"   🏗️ Niveles estructurales: {[f'{level:.5f}' for level in structural_levels[:3]]}")
+                        # Mostrar señal SmartMoney
+                        self.log(f"🎯 SEÑAL SMARTMONEY: {direction} - Precio: {entry_price:.5f}")
                         
                         # Almacenar información de la posición para gestión de riesgo
                         self.current_position_info = {
@@ -178,15 +172,13 @@ class ICCStrategy(bt.Strategy):
                         # Solo procesar la primera señal
                         break
                 else:
-                    # Fallback a lógica simple si no hay señales SmartMoney
-                    self.log(f"📊 No hay señales SmartMoney, usando lógica de respaldo")
-                    
+                    # No hay señales SmartMoney, usar lógica de respaldo
                     # Condiciones de compra de respaldo
                     if (self.rsi[0] < 60 and 
                         self.macd.macd[0] > self.macd.signal[0] and 
                         self.data.close[0] > self.data.close[-5]):
                         
-                        self.log(f"🎯 SEÑAL COMPRA (RESPALDO) en vela {len(self.data)}")
+                        self.log(f"🎯 SEÑAL COMPRA (RSI/MACD) - Precio: {self.data.close[0]:.5f}")
                         # Para señales de respaldo, usar Stop Loss simple
                         entry_price = self.data.close[0]
                         stop_loss = entry_price * 0.995  # 0.5% por defecto
@@ -218,7 +210,7 @@ class ICCStrategy(bt.Strategy):
                           self.macd.macd[0] < self.macd.signal[0] and 
                           self.data.close[0] < self.data.close[-5]):
                         
-                        self.log(f"🎯 SEÑAL VENTA (RESPALDO) en vela {len(self.data)}")
+                        self.log(f"🎯 SEÑAL VENTA (RSI/MACD) - Precio: {self.data.close[0]:.5f}")
                         # Para señales de respaldo, usar Stop Loss simple
                         entry_price = self.data.close[0]
                         stop_loss = entry_price * 1.005  # 0.5% por defecto
@@ -246,17 +238,16 @@ class ICCStrategy(bt.Strategy):
                         self.sell()
                         
             except Exception as e:
-                self.log(f"❌ Error en análisis SmartMoney: {e}")
                 # Usar lógica de respaldo en caso de error
                 if (self.rsi[0] < 60 and 
                     self.macd.macd[0] > self.macd.signal[0] and 
                     self.data.close[0] > self.data.close[-5]):
-                    self.log(f"🎯 SEÑAL COMPRA (ERROR) en vela {len(self.data)}")
+                    self.log(f"🎯 SEÑAL COMPRA (ERROR) - Precio: {self.data.close[0]:.5f}")
                     self.buy()
                 elif (self.rsi[0] > 40 and 
                       self.macd.macd[0] < self.macd.signal[0] and 
                       self.data.close[0] < self.data.close[-5]):
-                    self.log(f"🎯 SEÑAL VENTA (ERROR) en vela {len(self.data)}")
+                    self.log(f"🎯 SEÑAL VENTA (ERROR) - Precio: {self.data.close[0]:.5f}")
                     self.sell()
     
     def check_icc_risk_management(self):
@@ -278,24 +269,24 @@ class ICCStrategy(bt.Strategy):
         if direction == 'LONG':
             # Verificar Stop Loss (precio por debajo del SL)
             if current_price <= stop_loss:
-                self.log(f"🛑 STOP LOSS ICC alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
+                self.log(f"🛑 STOP LOSS - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
                 
             # Verificar Take Profits en orden de prioridad
             if tp3 and current_price >= tp3:
-                self.log(f"🎯 TAKE PROFIT 1:3 ICC alcanzado - Precio: {current_price:.5f}, TP3: {tp3:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:3 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
             elif tp2 and current_price >= tp2:
-                self.log(f"🎯 TAKE PROFIT 1:2 ICC alcanzado - Precio: {current_price:.5f}, TP2: {tp2:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:2 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
             elif tp1 and current_price >= tp1:
-                self.log(f"🎯 TAKE PROFIT 1:1 ICC alcanzado - Precio: {current_price:.5f}, TP1: {tp1:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:1 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
@@ -303,24 +294,24 @@ class ICCStrategy(bt.Strategy):
         elif direction == 'SHORT':
             # Verificar Stop Loss (precio por encima del SL)
             if current_price >= stop_loss:
-                self.log(f"🛑 STOP LOSS ICC alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
+                self.log(f"🛑 STOP LOSS - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
                 
             # Verificar Take Profits en orden de prioridad
             if tp3 and current_price <= tp3:
-                self.log(f"🎯 TAKE PROFIT 1:3 ICC alcanzado - Precio: {current_price:.5f}, TP3: {tp3:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:3 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
             elif tp2 and current_price <= tp2:
-                self.log(f"🎯 TAKE PROFIT 1:2 ICC alcanzado - Precio: {current_price:.5f}, TP2: {tp2:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:2 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
             elif tp1 and current_price <= tp1:
-                self.log(f"🎯 TAKE PROFIT 1:1 ICC alcanzado - Precio: {current_price:.5f}, TP1: {tp1:.5f}")
+                self.log(f"🎯 TAKE PROFIT 1:1 - Precio: {current_price:.5f}")
                 self.close()
                 self.current_position_info = None
                 return
@@ -332,49 +323,9 @@ class ICCStrategy(bt.Strategy):
         
         if order.status in [order.Completed]:
             if order.isbuy():
-                # Obtener información de gestión de riesgo para la posición larga
-                if self.current_position_info and self.current_position_info['direction'] == 'LONG':
-                    stop_loss = self.current_position_info['stop_loss']
-                    tp_levels = self.current_position_info.get('tp_levels', {})
-                    tp1 = tp_levels.get('tp1', 'N/A')
-                    tp2 = tp_levels.get('tp2', 'N/A')
-                    tp3 = tp_levels.get('tp3', 'N/A')
-                    
-                    self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
-                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
-                    self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
-                    tp1_str = f'{tp1:.5f}' if isinstance(tp1, (int, float)) else 'N/A'
-                    tp2_str = f'{tp2:.5f}' if isinstance(tp2, (int, float)) else 'N/A'
-                    tp3_str = f'{tp3:.5f}' if isinstance(tp3, (int, float)) else 'N/A'
-                    self.log(f'   🎯 TP1 (1:1): {tp1_str}')
-                    self.log(f'   🎯 TP2 (1:2): {tp2_str}')
-                    self.log(f'   🎯 TP3 (1:3): {tp3_str}')
-                else:
-                    self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}, '
-                            f'Costo: {order.executed.value:.2f}, '
-                            f'Comisión: {order.executed.comm:.2f}')
+                self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
             else:
-                # Obtener información de gestión de riesgo para la posición corta
-                if self.current_position_info and self.current_position_info['direction'] == 'SHORT':
-                    stop_loss = self.current_position_info['stop_loss']
-                    tp_levels = self.current_position_info.get('tp_levels', {})
-                    tp1 = tp_levels.get('tp1', 'N/A')
-                    tp2 = tp_levels.get('tp2', 'N/A')
-                    tp3 = tp_levels.get('tp3', 'N/A')
-                    
-                    self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
-                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
-                    self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
-                    tp1_str = f'{tp1:.5f}' if isinstance(tp1, (int, float)) else 'N/A'
-                    tp2_str = f'{tp2:.5f}' if isinstance(tp2, (int, float)) else 'N/A'
-                    tp3_str = f'{tp3:.5f}' if isinstance(tp3, (int, float)) else 'N/A'
-                    self.log(f'   🎯 TP1 (1:1): {tp1_str}')
-                    self.log(f'   🎯 TP2 (1:2): {tp2_str}')
-                    self.log(f'   🎯 TP3 (1:3): {tp3_str}')
-                else:
-                    self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}, '
-                            f'Costo: {order.executed.value:.2f}, '
-                            f'Comisión: {order.executed.comm:.2f}')
+                self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
         
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.log('Orden Cancelada/Margin/Rechazada')
@@ -423,15 +374,9 @@ class ICCStrategy(bt.Strategy):
                 elif tp1 and current_price <= tp1:
                     close_type = "TAKE PROFIT 1:1"
         
-        # Mostrar información detallada del trade
-        self.log(f'📊 TRADE CERRADO - {close_type}')
-        self.log(f'   💰 P&L: {pnl:.2f}, P&L Neto: {pnlcomm:.2f}, ROI: {roi:.2f}%')
-        self.log(f'   📈 Dirección: {direction}, Precio actual: {current_price:.5f}')
-        
-        if pnlcomm > 0:
-            self.log(f'   ✅ OPERACIÓN GANADORA')
-        else:
-            self.log(f'   ❌ OPERACIÓN PERDEDORA')
+        # Mostrar información simplificada del trade
+        result = "GANADORA" if pnlcomm > 0 else "PERDEDORA"
+        self.log(f'📊 TRADE CERRADO - {close_type} - {result} - P&L: {pnlcomm:.2f}')
         
         # Actualizar contadores
         self.trade_count += 1
@@ -466,14 +411,11 @@ class ICCStrategy(bt.Strategy):
         # Limpiar información de gestión de riesgo
         self.current_position_info = None
         
-        self.log(f'🏁 BACKTESTING COMPLETADO')
-        self.log(f'   📊 Total de operaciones: {self.trade_count}')
-        self.log(f'   ✅ Operaciones ganadoras: {self.win_count}')
-        self.log(f'   ❌ Operaciones perdedoras: {self.loss_count}')
-        
         if self.trade_count > 0:
             win_rate = (self.win_count / self.trade_count) * 100
-            self.log(f'   📈 Tasa de éxito: {win_rate:.2f}%')
+            self.log(f'🏁 BACKTESTING COMPLETADO - {self.trade_count} operaciones - {win_rate:.1f}% éxito')
+        else:
+            self.log(f'🏁 BACKTESTING COMPLETADO - Sin operaciones')
 
 def load_data():
     """Cargar datos de EURUSD como en smart01.py"""
@@ -498,7 +440,7 @@ def load_data():
         df.index = pd.to_datetime(df.index)
         
         # Tomar solo las últimas 500 velas para el test
-        df = df.tail(500)
+        # df = df.tail(500)
         
         print(f"📊 Datos cargados desde: {csv_path}")
         print(f"   📈 Total de velas: {len(df)}")
