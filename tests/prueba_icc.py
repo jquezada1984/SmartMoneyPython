@@ -172,115 +172,14 @@ class ICCStrategy(bt.Strategy):
                         # Solo procesar la primera señal
                         break
                 else:
-                    # No hay señales SmartMoney, usar lógica de respaldo
-                    # Condiciones de compra de respaldo
-                    if (self.rsi[0] < 60 and 
-                        self.macd.macd[0] > self.macd.signal[0] and 
-                        self.data.close[0] > self.data.close[-5]):
-                        
-                        self.log(f"🎯 SEÑAL COMPRA (RSI/MACD) - Precio: {self.data.close[0]:.5f}")
-                        # Para señales de respaldo, usar Stop Loss simple
-                        entry_price = self.data.close[0]
-                        stop_loss = entry_price * 0.995  # 0.5% por defecto
-                        
-                        # Calcular Take Profit estructural para señales de respaldo
-                        risk_distance = entry_price - stop_loss
-                         
-                        # Calcular Take Profit basado en estructura (entre 1:1 y 1:3)
-                        # Usar ATR para determinar el nivel estructural
-                        atr_period = 14
-                        atr_values = []
-                        for i in range(1, atr_period + 1):
-                            if len(self.data) >= i:
-                                high = self.data.high[-i]
-                                low = self.data.low[-i]
-                                close = self.data.close[-i-1] if len(self.data) > i else self.data.close[-i]
-                                tr = max(high - low, abs(high - close), abs(low - close))
-                                atr_values.append(tr)
-                        
-                        if atr_values:
-                            atr = sum(atr_values) / len(atr_values)
-                            # Calcular R:R basado en estructura (entre 1.0 y 3.0)
-                            structural_rr = min(3.0, max(1.0, (atr * 2) / risk_distance))
-                            take_profit = entry_price + (risk_distance * structural_rr)
-                        else:
-                            # Fallback a R:R 1.5 si no hay suficientes datos
-                            take_profit = entry_price + (risk_distance * 1.5)
-                        
-                        self.current_position_info = {
-                            'direction': 'LONG',
-                            'entry_price': entry_price,
-                            'stop_loss': stop_loss,
-                            'take_profit': take_profit,
-                            'risk_reward_ratio': structural_rr if atr_values else 1.5,
-                            'tp_levels': {
-                                'tp1': take_profit,  # Solo un TP estructural
-                                'structural_levels': [take_profit]
-                            }
-                        }
-                        
-                        self.buy()
-                        
-                    # Condiciones de venta de respaldo
-                    elif (self.rsi[0] > 40 and 
-                          self.macd.macd[0] < self.macd.signal[0] and 
-                          self.data.close[0] < self.data.close[-5]):
-                        
-                        self.log(f"🎯 SEÑAL VENTA (RSI/MACD) - Precio: {self.data.close[0]:.5f}")
-                        # Para señales de respaldo, usar Stop Loss simple
-                        entry_price = self.data.close[0]
-                        stop_loss = entry_price * 1.005  # 0.5% por defecto
-                        
-                        # Calcular Take Profit estructural para señales de respaldo
-                        risk_distance = stop_loss - entry_price
-                         
-                        # Calcular Take Profit basado en estructura (entre 1:1 y 1:3)
-                        # Usar ATR para determinar el nivel estructural
-                        atr_period = 14
-                        atr_values = []
-                        for i in range(1, atr_period + 1):
-                            if len(self.data) >= i:
-                                high = self.data.high[-i]
-                                low = self.data.low[-i]
-                                close = self.data.close[-i-1] if len(self.data) > i else self.data.close[-i]
-                                tr = max(high - low, abs(high - close), abs(low - close))
-                                atr_values.append(tr)
-                        
-                        if atr_values:
-                            atr = sum(atr_values) / len(atr_values)
-                            # Calcular R:R basado en estructura (entre 1.0 y 3.0)
-                            structural_rr = min(3.0, max(1.0, (atr * 2) / risk_distance))
-                            take_profit = entry_price - (risk_distance * structural_rr)
-                        else:
-                            # Fallback a R:R 1.5 si no hay suficientes datos
-                            take_profit = entry_price - (risk_distance * 1.5)
-                        
-                        self.current_position_info = {
-                            'direction': 'SHORT',
-                            'entry_price': entry_price,
-                            'stop_loss': stop_loss,
-                            'take_profit': take_profit,
-                            'risk_reward_ratio': structural_rr if atr_values else 1.5,
-                            'tp_levels': {
-                                'tp1': take_profit,  # Solo un TP estructural
-                                'structural_levels': [take_profit]
-                            }
-                        }
-                        
-                        self.sell()
+                    # No hay señales SmartMoney - NO OPERAR
+                    # Solo SmartMoney ICC puede generar señales de entrada
+                    pass
                         
             except Exception as e:
-                # Usar lógica de respaldo en caso de error
-                if (self.rsi[0] < 60 and 
-                    self.macd.macd[0] > self.macd.signal[0] and 
-                    self.data.close[0] > self.data.close[-5]):
-                    self.log(f"🎯 SEÑAL COMPRA (ERROR) - Precio: {self.data.close[0]:.5f}")
-                    self.buy()
-                elif (self.rsi[0] > 40 and 
-                      self.macd.macd[0] < self.macd.signal[0] and 
-                      self.data.close[0] < self.data.close[-5]):
-                    self.log(f"🎯 SEÑAL VENTA (ERROR) - Precio: {self.data.close[0]:.5f}")
-                    self.sell()
+                # Solo SmartMoney ICC puede generar señales - NO OPERAR en caso de error
+                self.log(f"⚠️ Error en análisis SmartMoney: {e}")
+                pass
     
     def check_icc_risk_management(self):
         """Verificar Stop Loss y Take Profit basado en gestión de riesgo ICC"""
