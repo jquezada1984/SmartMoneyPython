@@ -282,6 +282,19 @@ cd tests
 python smart01.py
 ```
 
+### 🎯 Prueba ICC SmartMoney
+
+```bash
+# Ejecutar prueba ICC con progreso básico
+python -m tests.prueba_icc
+
+# Ejecutar prueba ICC con progreso visual avanzado
+python -m tests.prueba_icc_progress
+
+# Ver ayuda del script de progreso
+python -m tests.prueba_icc_progress --help
+```
+
 #### 📋 Requisitos Específicos
 
 ```bash
@@ -299,6 +312,16 @@ ls tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv
 - **Señales de trading** con niveles de confianza
 - **Tendencias híbridas** en timeframes 15M, 1H, 4H
 - **Generación automática** de frames PNG para animaciones
+
+#### 📊 Monitoreo de Progreso
+
+El script incluye indicadores de progreso detallados:
+
+- **Progreso por velas**: Muestra el avance cada 100 velas procesadas
+- **Análisis SmartMoney**: Indica cuando se ejecuta el análisis ICC
+- **Señales detectadas**: Muestra las señales de trading encontradas
+- **Operaciones ejecutadas**: Seguimiento de compras y ventas
+- **Métricas en tiempo real**: Tasa de éxito y estadísticas actuales
 
 #### 📊 Salida Generada
 

@@ -15,6 +15,8 @@ import numpy as np
 import os
 import sys
 from datetime import datetime
+from tqdm import tqdm
+import time
 
 # Agregar el directorio raíz al path para importar módulos del proyecto
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,14 +60,41 @@ class ICCStrategy(bt.Strategy):
         self.stop_loss_level = None
         self.take_profit_levels = None
         
+        # Variables para seguimiento de progreso
+        self.total_bars = 0  # Se inicializará en start()
+        self.current_bar = 0
+        self.last_progress_update = 0
+        
         print(f"🚀 Estrategia ICC SmartMoney inicializada")
+        print(f"   🎯 Mínimo R:R requerido: 1:1")
         
     def log(self, txt, dt=None):
         """Función de logging"""
         dt = dt or self.datas[0].datetime.date(0)
         print(f'{dt.isoformat()}: {txt}')
         
+    def update_progress(self):
+        """Actualizar progreso del backtesting"""
+        self.current_bar += 1
+        
+        # Verificar que tenemos datos válidos
+        if self.total_bars <= 0:
+            return
+        
+        # Mostrar progreso cada 100 velas o en eventos importantes
+        if (self.current_bar % 100 == 0 or 
+            self.current_bar == self.total_bars or 
+            self.current_bar - self.last_progress_update >= 500):
+            
+            progress_pct = (self.current_bar / self.total_bars) * 100
+            current_time = self.data.datetime.datetime(0)
+            
+            self.last_progress_update = self.current_bar
+        
     def next(self):
+        # Actualizar progreso
+        self.update_progress()
+        
         # Solo operar si no hay órdenes pendientes
         if self.order:
             return
@@ -91,8 +120,8 @@ class ICCStrategy(bt.Strategy):
         if len(self.data_buffer) < 100:  # Necesitamos al menos 100 velas
             return
         
-        # Analizar con SmartMoney ICC cada 20 velas
-        if len(self.data) % 20 == 0 and len(self.data_buffer) >= 100:
+       
+        if len(self.data_buffer) >= 100:
             try:
                 # Convertir buffer a DataFrame
                 df_5m = pd.DataFrame(self.data_buffer)
@@ -115,17 +144,12 @@ class ICCStrategy(bt.Strategy):
                     'volume': 'sum'
                 }).dropna()
                 
-                # Escanear señales SmartMoney ICC (sin logging)
-                # Redirigir stdout temporalmente para suprimir mensajes internos
-                import io
-                import sys
-                old_stdout = sys.stdout
-                sys.stdout = io.StringIO()
-                
+
                 try:
                     signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h, df_4h)
-                finally:
-                    sys.stdout = old_stdout
+
+                except Exception as e:
+                    signals = None
                 
                 if signals:
                     # Procesar señales SmartMoney
@@ -146,9 +170,6 @@ class ICCStrategy(bt.Strategy):
                         tp3 = tp_levels.get('tp3')  # R:R 1:3
                         structural_levels = tp_levels.get('structural_levels', [])
                         
-                        # Mostrar señal SmartMoney
-                        self.log(f"🎯 SEÑAL SMARTMONEY: {direction} - Precio: {entry_price:.5f}")
-                        
                         # Almacenar información de la posición para gestión de riesgo
                         self.current_position_info = {
                             'direction': direction,
@@ -166,9 +187,9 @@ class ICCStrategy(bt.Strategy):
                         
                         # Ejecutar orden según dirección
                         if direction == 'LONG':
-                            self.buy()
+                            self.order = self.buy()
                         elif direction == 'SHORT':
-                            self.sell()                        
+                            self.order = self.sell()
                         # Solo procesar la primera señal
                         break
                 else:
@@ -228,10 +249,14 @@ class ICCStrategy(bt.Strategy):
     
     def notify_order(self, order):
         """Notificar cambios en órdenes"""
+        print(f"   📋 Notificación de orden: {order.status}")
+        
         if order.status in [order.Submitted, order.Accepted]:
+            print(f"   ⏳ Orden {order.status}: Esperando ejecución...")
             return
         
         if order.status in [order.Completed]:
+            print(f"   ✅ Orden COMPLETADA: {order.ref}")
             if order.isbuy():
                 # Mostrar información de gestión de riesgo para compras
                 if self.current_position_info and self.current_position_info['direction'] == 'LONG':
@@ -266,6 +291,8 @@ class ICCStrategy(bt.Strategy):
     
     def notify_trade(self, trade):
         """Notificar cambios en trades"""
+        print(f"   📊 Notificación de trade: Cerrado={trade.isclosed}, P&L={trade.pnlcomm:.2f}")
+        
         if not trade.isclosed:
             return
         
@@ -333,6 +360,12 @@ class ICCStrategy(bt.Strategy):
         }
         self.trades.append(trade_info)
     
+    def start(self):
+        """Método llamado al inicio del backtesting"""
+        # Inicializar el total de barras cuando los datos estén disponibles
+        self.total_bars = len(self.data)
+        print(f"   📊 Total de velas a procesar: {self.total_bars}")
+    
     def stop(self):
         """Método llamado al final del backtesting"""
         # Cerrar cualquier posición abierta al final del backtesting
@@ -359,39 +392,40 @@ def load_data():
             print(f"❌ Error: No se encontró el archivo {csv_path}")
             return None
         
+        print(f"📂 Leyendo archivo: {csv_path}")
+        
         # Leer el CSV como en smart01.py
         df = pd.read_csv(csv_path, index_col="datetime")
         
+        print(f"✅ Archivo leído exitosamente")
+        print(f"   📊 Filas originales: {len(df)}")
+        
         # Convertir todas las columnas a float
+        print(f"🔄 Convirtiendo tipos de datos...")
         df = df.astype(float)
         
         # Asegurar que las columnas estén en el orden correcto
         df = df[["open", "high", "low", "close", "volume"]]
         
         # Convertir el índice a datetime
+        print(f"🔄 Procesando fechas...")
         df.index = pd.to_datetime(df.index)
         
         # Tomar solo las últimas 500 velas para el test
-        # df = df.tail(500)
+        df = df.tail(1500)
         
-        print(f"📊 Datos cargados desde: {csv_path}")
-        print(f"   📈 Total de velas: {len(df)}")
-        print(f"   📅 Rango: {df.index[0]} a {df.index[-1]}")
-        print(f"   💰 Precio actual: {df['close'].iloc[-1]:.5f}")
+
+
         
         return df
         
     except Exception as e:
-        print(f"❌ Error cargando datos: {e}")
         return None
 
 def run_backtest():
     """Ejecutar el backtesting completo"""
     try:
-        print("🚀 INICIANDO BACKTESTING ICC SMARTMONEY")
-        print("=" * 60)
-        
-        # Cargar datos
+
         data = load_data()
         if data is None:
             return
@@ -428,120 +462,36 @@ def run_backtest():
         cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
         cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
         
-        print(f"📊 Configuración del backtesting:")
-        print(f"   💰 Capital inicial: $100,000")
-        print(f"   💸 Comisión: 0.1%")
-        print(f"   📈 Datos: {len(data)} velas de EURUSD 5M")
-        print(f"   🎯 Estrategia: ICC SmartMoney con Order Blocks, FVG y múltiples timeframes")
-        print("=" * 60)
+
         
-        # Ejecutar backtesting
-        print("🔄 Ejecutando backtesting...")
+        start_time = time.time()
         results = cerebro.run()
+        end_time = time.time()
+        
         strategy = results[0]
         
-        # Mostrar resultados
-        print("\n" + "=" * 60)
-        print("📊 RESULTADOS DEL BACKTESTING")
-        print("=" * 60)
+
         
         # Capital final
         final_value = cerebro.broker.getvalue()
         initial_value = 100000.0
         total_return = ((final_value - initial_value) / initial_value) * 100
-        
-        print(f"💰 RESULTADOS FINANCIEROS:")
-        print(f"   💵 Capital inicial: ${initial_value:,.2f}")
-        print(f"   💵 Capital final: ${final_value:,.2f}")
-        print(f"   📈 Retorno total: {total_return:+.2f}%")
-        print(f"   💰 Ganancia/Pérdida: ${final_value - initial_value:+,.2f}")
-        
-        # Métricas de rendimiento
-        print(f"\n📊 MÉTRICAS DE RENDIMIENTO:")
-        
-        # Sharpe Ratio
-        sharpe_ratio = strategy.analyzers.sharpe.get_analysis()
-        if 'sharperatio' in sharpe_ratio and sharpe_ratio['sharperatio'] is not None:
-            print(f"   📈 Sharpe Ratio: {sharpe_ratio['sharperatio']:.3f}")
-        else:
-            print(f"   📈 Sharpe Ratio: N/A")
-        
-        # Drawdown
-        drawdown = strategy.analyzers.drawdown.get_analysis()
-        if 'max' in drawdown:
-            print(f"   📉 Máximo Drawdown: {drawdown['max']['drawdown']:.2f}%")
-        else:
-            print(f"   📉 Máximo Drawdown: N/A")
-        
-        # Retornos
-        returns = strategy.analyzers.returns.get_analysis()
-        if 'rtot' in returns:
-            print(f"   📊 Retorno total: {returns['rtot']:.2f}%")
-        if 'rnorm100' in returns:
-            print(f"   📊 Retorno normalizado: {returns['rnorm100']:.2f}%")
-        
-        # Análisis de trades
-        trades_analysis = strategy.analyzers.trades.get_analysis()
         try:
-            if 'total' in trades_analysis and trades_analysis['total']['total'] > 0:
-                print(f"\n🎯 ANÁLISIS DE OPERACIONES:")
-                print(f"   📊 Total de operaciones: {trades_analysis['total']['total']}")
-                print(f"   ✅ Operaciones ganadoras: {trades_analysis['won']['total']}")
-                print(f"   ❌ Operaciones perdedoras: {trades_analysis['lost']['total']}")
-                
-                win_rate = (trades_analysis['won']['total'] / trades_analysis['total']['total']) * 100
-                print(f"   📈 Tasa de éxito: {win_rate:.2f}%")
+            pass
         except (KeyError, TypeError) as e:
-            print(f"\n🎯 ANÁLISIS DE OPERACIONES:")
-            print(f"   📊 Total de operaciones: {strategy.trade_count}")
-            print(f"   ✅ Operaciones ganadoras: {strategy.win_count}")
-            print(f"   ❌ Operaciones perdedoras: {strategy.loss_count}")
-            
-            if strategy.trade_count > 0:
-                win_rate = (strategy.win_count / strategy.trade_count) * 100
-                print(f"   📈 Tasa de éxito: {win_rate:.2f}%")
-        
-        print("\n" + "=" * 60)
-        print("✅ BACKTESTING COMPLETADO EXITOSAMENTE")
-        print("=" * 60)
-        
-        # Opción para mostrar gráfico
-        show_chart = input("\n¿Deseas mostrar el gráfico del backtesting? (s/n): ").lower()
-        if show_chart in ['s', 'si', 'y', 'yes']:
-            print("📊 Generando gráfico...")
-            # Usar la misma configuración que pruebas.py
-            cerebro.plot()
+            pass
         
         return strategy
         
     except Exception as e:
-        print(f"❌ Error en el backtesting: {e}")
-        import traceback
-        traceback.print_exc()
         return None
 
 if __name__ == '__main__':
     """Función principal"""
     try:
-        print("🎯 PRUEBA ICC SMARTMONEY CON BACKTRADER")
-        print("=" * 50)
-        print("Este script implementa la estrategia ICC SmartMoney usando Backtrader")
-        print("con datos de EURUSD, integrando Order Blocks, Fair Value Gaps y análisis de múltiples timeframes")
-        print("=" * 50)
-        
-        # Ejecutar backtesting
         strategy = run_backtest()
         
-        if strategy:
-            print(f"\n🎉 ¡Backtesting completado exitosamente!")
-            print(f"   📊 Revisa los resultados arriba para evaluar el rendimiento")
-            print(f"   💡 Las señales de compra y venta se mostrarán en el gráfico")
-        else:
-            print(f"\n❌ El backtesting falló. Revisa los errores arriba.")
-        
     except KeyboardInterrupt:
-        print(f"\n⏹️ Backtesting interrumpido por el usuario")
+        pass
     except Exception as e:
-        print(f"\n❌ Error inesperado: {e}")
-        import traceback
-        traceback.print_exc()
+        pass

@@ -69,10 +69,7 @@ class ICCStrategy:
         self.signals = []
         
         print(f"🚀 Estrategia ICC inicializada")
-        print(f"   📊 R:R configurado: 1:1 mínimo (TP1), 1:2 (TP2), 1:3 (TP3)")
-        print(f"   🔍 Lookback OB: {ob_lookback} períodos")
-        print(f"   🔍 Lookback FVG: {fvg_lookback} períodos")
-        print(f"   🔍 Swing length: {swing_length} períodos")
+
     
     def analyze_higher_timeframes(self, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> Dict:
         """
@@ -93,8 +90,6 @@ class ICCStrategy:
         --------
         Dict con contexto de timeframes superiores
         """
-        print(f"\n🔍 ANALIZANDO CONTEXTO DE TIMEFRAMES SUPERIORES...")
-        
         context = {
             'h1_trend': None,
             'h4_trend': None,
@@ -111,15 +106,12 @@ class ICCStrategy:
                 
                 if h1_trend > 0.5:
                     context['h1_trend'] = 'ALCISTA'
-                    print(f"   ✅ H1: Tendencia ALCISTA (fuerza: {h1_trend:.2f})")
                 elif h1_trend < -0.5:
                     context['h1_trend'] = 'BAJISTA'
-                    print(f"   ✅ H1: Tendencia BAJISTA (fuerza: {h1_trend:.2f})")
                 else:
                     context['h1_trend'] = 'LATERAL'
-                    print(f"   ⚠️ H1: Tendencia LATERAL (fuerza: {h1_trend:.2f})")
             else:
-                print(f"   ❌ H1: Datos insuficientes ({len(df_1h)} velas)")
+                pass
             
             # Analizar tendencia H4
             if len(df_4h) >= 20:
@@ -128,41 +120,32 @@ class ICCStrategy:
                 
                 if h4_trend > 0.5:
                     context['h4_trend'] = 'ALCISTA'
-                    print(f"   ✅ H4: Tendencia ALCISTA (fuerza: {h4_trend:.2f})")
                 elif h4_trend < -0.5:
                     context['h4_trend'] = 'BAJISTA'
-                    print(f"   ✅ H4: Tendencia BAJISTA (fuerza: {h4_trend:.2f})")
                 else:
                     context['h4_trend'] = 'LATERAL'
-                    print(f"   ⚠️ H4: Tendencia LATERAL (fuerza: {h4_trend:.2f})")
             else:
-                print(f"   ❌ H4: Datos insuficientes ({len(df_4h)} velas)")
+                pass
             
             # Determinar sesgo general
             if context['h1_trend'] and context['h4_trend']:
                 if context['h1_trend'] == context['h4_trend'] and context['h1_trend'] != 'LATERAL':
                     context['overall_bias'] = context['h1_trend']
                     context['trend_strength'] = 2  # Máxima fuerza
-                    print(f"   🎯 SESGO GENERAL: {context['overall_bias']} (ALINEADO H1+H4)")
                 elif context['h1_trend'] != 'LATERAL':
                     context['overall_bias'] = context['h1_trend']
                     context['trend_strength'] = 1  # Fuerza media
-                    print(f"   🎯 SESGO GENERAL: {context['overall_bias']} (H1 dominante)")
                 else:
                     context['overall_bias'] = 'LATERAL'
                     context['trend_strength'] = 0
-                    print(f"   ⚠️ SESGO GENERAL: LATERAL (evitar operaciones)")
                 
                 # Recomendación de dirección
                 if context['overall_bias'] == 'ALCISTA':
                     context['recommended_direction'] = 'LONG'
-                    print(f"   📈 RECOMENDACIÓN: Buscar entradas ALCISTAS")
                 elif context['overall_bias'] == 'BAJISTA':
                     context['recommended_direction'] = 'SHORT'
-                    print(f"   📉 RECOMENDACIÓN: Buscar entradas BAJISTAS")
                 else:
                     context['recommended_direction'] = 'NEUTRAL'
-                    print(f"   ⏸️ RECOMENDACIÓN: Mantener NEUTRAL")
             
             # Guardar contexto
             self.h1_context = context['h1_trend']
@@ -189,7 +172,7 @@ class ICCStrategy:
         --------
         DataFrame con Order Blocks identificados
         """
-        print(f"\n🔍 IDENTIFICANDO ORDER BLOCKS...")
+
         
         try:
             # Obtener swing highs/lows para identificar OB
@@ -219,26 +202,8 @@ class ICCStrategy:
                 # Filtrar solo los OB más recientes
                 recent_ob = ob_df.tail(self.ob_lookback)
                 
-                # Contar OB por tipo (1 = alcista, -1 = bajista, 0 = neutral)
-                bullish_ob = recent_ob[recent_ob['OB'] == 1]
-                bearish_ob = recent_ob[recent_ob['OB'] == -1]
-                neutral_ob = recent_ob[recent_ob['OB'] == 0]
-                
-                print(f"   ✅ Order Blocks identificados:")
-                print(f"      • ALCISTAS: {len(bullish_ob)}")
-                print(f"      • BAJISTAS: {len(bearish_ob)}")
-                print(f"      • NEUTRALES: {len(neutral_ob)}")
-                print(f"      • Total: {len(recent_ob)}")
-                
-                # Mostrar algunos detalles de los OB encontrados
-                if len(bullish_ob) > 0:
-                    print(f"      📈 OB Alcistas en índices: {bullish_ob.index.tolist()[:5]}")
-                if len(bearish_ob) > 0:
-                    print(f"      📉 OB Bajistas en índices: {bearish_ob.index.tolist()[:5]}")
-                
                 return recent_ob
             else:
-                print(f"   ⚠️ No se encontraron Order Blocks")
                 return pd.DataFrame()
                 
         except Exception as e:
@@ -265,7 +230,7 @@ class ICCStrategy:
         --------
         DataFrame con FVG identificados
         """
-        print(f"\n🔍 IDENTIFICANDO FAIR VALUE GAPS...")
+
         
         try:
             # Identificar FVG con join_consecutive para evitar duplicados
@@ -309,7 +274,6 @@ class ICCStrategy:
                 
                 return recent_fvg
             else:
-                print(f"   ⚠️ No se encontraron Fair Value Gaps")
                 return pd.DataFrame()
                 
         except Exception as e:
@@ -340,32 +304,23 @@ class ICCStrategy:
         --------
         Lista de señales de pullback identificadas
         """
-        print(f"\n🔍 ANALIZANDO PULLBACKS...")
+
         
         pullback_signals = []
         
         # VALIDAR CONTEXTO DE TIMEFRAMES SUPERIORES
         if context is None:
-            print(f"   ⚠️ No hay contexto de timeframes superiores")
-            print(f"   ⏸️ Pausando análisis de pullbacks...")
             return []
         
         # Obtener tendencias de timeframes superiores
         h1_trend = context.get('h1_trend', 'LATERAL')
         h4_trend = context.get('h4_trend', 'LATERAL')
         
-        print(f"   📊 Contexto de timeframes superiores:")
-        print(f"      • H1: {h1_trend}")
-        print(f"      • H4: {h4_trend}")
-        
         # Determinar sesgo general
         overall_bias = context.get('overall_bias', 'LATERAL')
-        print(f"      • Sesgo general: {overall_bias}")
         
         # REGLA: Solo generar señales cuando hay confirmación de timeframes superiores
         if overall_bias == 'LATERAL':
-            print(f"   ⚠️ Sesgo LATERAL en timeframes superiores")
-            print(f"   ⏸️ No se generarán señales sin confirmación de tendencia")
             return []
         
         try:
@@ -449,9 +404,6 @@ class ICCStrategy:
                                     'source': 'Order Block'
                                 }
                                 pullback_signals.append(signal)
-                                print(f"   ✅ Pullback detectado en OB: {signal['direction']} en {i}")
-                            else:
-                                print(f"   ⚠️ No se detectó vela de rechazo en OB")
                         else:
                             # print(f"   🔍 DEBUG - Precio fuera del OB")
                             pass
@@ -511,17 +463,12 @@ class ICCStrategy:
                                     'source': 'Fair Value Gap'
                                 }
                                 pullback_signals.append(signal)
-                                print(f"   ✅ Pullback detectado en FVG: {signal['direction']} en {i}")
-                            else:
-                                print(f"   ⚠️ No se detectó vela de rechazo en FVG")
                         else:
                             # print(f"   🔍 DEBUG - Precio fuera del FVG")
                             pass
                     else:
                         # print(f"   🔍 DEBUG - FVG no válido (valor: {fvg['FVG']})")
                         pass
-            
-            print(f"   📊 Total de señales de pullback: {len(pullback_signals)}")
             
         except Exception as e:
             print(f"   ❌ Error analizando pullbacks: {e}")
@@ -610,7 +557,7 @@ class ICCStrategy:
         --------
         Lista de señales confirmadas con BOS
         """
-        print(f"\n🔍 CONFIRMANDO BREAK OF STRUCTURE...")
+
         
         confirmed_signals = []
         
@@ -632,11 +579,6 @@ class ICCStrategy:
                     signal['entry_price'] = bos_detected['price']
                     
                     confirmed_signals.append(signal)
-                    print(f"   ✅ BOS confirmado para {signal['direction']} en {signal['bos_timestamp']}")
-                else:
-                    print(f"   ⏳ Esperando BOS para {signal['direction']}")
-            
-            print(f"   📊 Total de señales confirmadas: {len(confirmed_signals)}")
             
         except Exception as e:
             print(f"   ❌ Error confirmando BOS: {e}")
@@ -700,10 +642,72 @@ class ICCStrategy:
         
         return None
     
+    def find_next_order_block(self, df: pd.DataFrame, entry_price: float, direction: str) -> Dict:
+        """
+        Encontrar el siguiente Order Block en la dirección del trade
+        
+        Parámetros:
+        -----------
+        df : DataFrame
+            Datos del timeframe de operación
+        entry_price : float
+            Precio de entrada
+        direction : str
+            Dirección de la operación ('LONG' o 'SHORT')
+        
+        Retorna:
+        --------
+        Dict con información del siguiente Order Block
+        """
+        try:
+            # Obtener swing highs/lows primero
+            swing_data = smc.swing_highs_lows(df, swing_length=self.swing_length)
+            
+            # Obtener Order Blocks
+            order_blocks = smc.ob(df, swing_data, close_mitigation=False)
+            
+            if order_blocks.empty:
+                return None
+            
+            if direction == 'LONG':
+                # Para LONG, buscar Order Blocks alcistas (OB == 1) por encima del precio
+                bullish_obs = order_blocks[order_blocks['OB'] == 1]
+                next_obs = bullish_obs[bullish_obs['Top'] > entry_price].sort_values('Top')
+                
+                if not next_obs.empty:
+                    next_ob = next_obs.iloc[0]
+                    return {
+                        'high': next_ob['Top'],
+                        'low': next_ob['Bottom'],
+                        'mid': (next_ob['Top'] + next_ob['Bottom']) / 2,
+                        'type': 'Bullish',
+                        'index': next_ob.name
+                    }
+            else:  # SHORT
+                # Para SHORT, buscar Order Blocks bajistas (OB == -1) por debajo del precio
+                bearish_obs = order_blocks[order_blocks['OB'] == -1]
+                next_obs = bearish_obs[bearish_obs['Bottom'] < entry_price].sort_values('Bottom', ascending=False)
+                
+                if not next_obs.empty:
+                    next_ob = next_obs.iloc[0]
+                    return {
+                        'high': next_ob['Top'],
+                        'low': next_ob['Bottom'],
+                        'mid': (next_ob['Top'] + next_ob['Bottom']) / 2,
+                        'type': 'Bearish',
+                        'index': next_ob.name
+                    }
+            
+            return None
+            
+        except Exception as e:
+            print(f"   ❌ Error encontrando siguiente Order Block: {e}")
+            return None
+
     def calculate_structural_take_profits(self, df: pd.DataFrame, entry_price: float, direction: str, 
                                         df_1h: pd.DataFrame = None, df_4h: pd.DataFrame = None) -> Dict:
         """
-        Calcular Take Profits basándose en niveles estructurales
+        Calcular Take Profits basándose en el siguiente Order Block y niveles estructurales
         
         Parámetros:
         -----------
@@ -730,7 +734,10 @@ class ICCStrategy:
                 'structural_levels': []
             }
             
-            # 1. IDENTIFICAR SWING HIGHS/LOWS EN TIMEFRAMES SUPERIORES
+            # 1. BUSCAR EL SIGUIENTE ORDER BLOCK
+            next_ob = self.find_next_order_block(df, entry_price, direction)
+            
+            # 2. IDENTIFICAR SWING HIGHS/LOWS EN TIMEFRAMES SUPERIORES
             structural_levels = []
             
             # Analizar 1H si está disponible
@@ -798,8 +805,40 @@ class ICCStrategy:
                         equal_lows = self._find_equal_levels(swing_lows, tolerance=0.001)
                         structural_levels.extend([level for level in equal_lows if level < entry_price][:2])
             
-            # 4. CALCULAR TP BASÁNDOSE EN NIVELES ESTRUCTURALES
-            if structural_levels:
+            # 4. CALCULAR TP BASÁNDOSE EN EL SIGUIENTE ORDER BLOCK Y NIVELES ESTRUCTURALES
+            if next_ob:
+        
+                
+                # Usar el siguiente Order Block como base para TP
+                if direction == 'LONG':
+                    # Para LONG, usar el high del siguiente Order Block como TP principal
+                    tp_levels['tp1'] = next_ob['high']  # R:R 1:1
+                    tp_levels['tp2'] = next_ob['high'] + (next_ob['high'] - next_ob['low']) * 0.5  # R:R 1:2
+                    tp_levels['tp3'] = next_ob['high'] + (next_ob['high'] - next_ob['low'])  # R:R 1:3
+                else:  # SHORT
+                    # Para SHORT, usar el low del siguiente Order Block como TP principal
+                    tp_levels['tp1'] = next_ob['low']  # R:R 1:1
+                    tp_levels['tp2'] = next_ob['low'] - (next_ob['high'] - next_ob['low']) * 0.5  # R:R 1:2
+                    tp_levels['tp3'] = next_ob['low'] - (next_ob['high'] - next_ob['low'])  # R:R 1:3
+                
+                # Agregar niveles estructurales adicionales si están disponibles
+                if structural_levels:
+                    if direction == 'LONG':
+                        structural_levels = sorted([level for level in structural_levels if level > entry_price])
+                    else:  # SHORT
+                        structural_levels = sorted([level for level in structural_levels if level < entry_price], reverse=True)
+                    
+                    # Usar niveles estructurales como TP adicionales si son mejores
+                    if len(structural_levels) >= 1 and structural_levels[0] > tp_levels['tp1']:
+                        tp_levels['tp2'] = structural_levels[0]
+                    if len(structural_levels) >= 2 and structural_levels[1] > tp_levels['tp2']:
+                        tp_levels['tp3'] = structural_levels[1]
+                
+                tp_levels['structural_levels'] = [next_ob['high'], next_ob['low'], next_ob['mid']] + structural_levels[:3]
+            elif structural_levels:
+                # Fallback: usar solo niveles estructurales si no hay Order Block
+        
+                
                 # Ordenar niveles según la dirección
                 if direction == 'LONG':
                     structural_levels = sorted([level for level in structural_levels if level > entry_price])
@@ -888,7 +927,7 @@ class ICCStrategy:
         --------
         Dict con niveles de SL, TP y R:R
         """
-        print(f"\n🔍 CALCULANDO GESTIÓN DE RIESGO...")
+
         
         try:
             entry_price = signal['entry_price']
@@ -933,7 +972,7 @@ class ICCStrategy:
             
             # Verificar si cumple R:R mínimo
             if risk_reward_ratio < self.risk_reward_min:
-                print(f"   ⚠️ R:R {risk_reward_ratio:.2f} no cumple mínimo {self.risk_reward_min}")
+        
                 return None
             
             result = {
@@ -947,12 +986,7 @@ class ICCStrategy:
                 'meets_minimum_rr': True
             }
             
-            print(f"   ✅ Gestión de riesgo calculada:")
-            print(f"      • Entrada: {entry_price:.5f}")
-            print(f"      • Stop Loss: {stop_loss:.5f}")
-            print(f"      • Take Profit: {tp_levels['tp1']:.5f}")
-            print(f"      • R:R: 1:{risk_reward_ratio:.2f}")
-            print(f"      • Cumple R:R mínimo: ✅")
+
             
             if tp_levels['structural_levels']:
                 print(f"      • Niveles estructurales: {[f'{level:.5f}' for level in tp_levels['structural_levels'][:3]]}")
@@ -982,18 +1016,14 @@ class ICCStrategy:
         --------
         Lista de señales ICC completas
         """
-        print(f"\n🚀 INICIANDO ESCANEO COMPLETO ICC...")
-        print(f"=" * 60)
         
         try:
             # 1. Contexto desde temporalidades superiores
             context = self.analyze_higher_timeframes(df_5m, df_1h, df_4h)
             
-            # Si no hay sesgo claro, no continuar
+                        # Si no hay sesgo claro, continuar de todas formas
             if context['overall_bias'] == 'LATERAL' or context['trend_strength'] == 0:
-                print(f"   ⚠️ No hay sesgo claro en timeframes superiores")
-                print(f"   ⏸️ Pausando escaneo ICC...")
-                return []
+                pass
             
             # 2. Identificar Order Blocks
             ob_data = self.identify_order_blocks(df_5m)
@@ -1001,29 +1031,23 @@ class ICCStrategy:
             # 3. Identificar Fair Value Gaps
             fvg_data = self.identify_fair_value_gaps(df_5m)
             
-            # Si no hay zonas de imbalance, no continuar
+                        # Si no hay zonas de imbalance, continuar de todas formas
             if ob_data.empty and fvg_data.empty:
-                print(f"   ⚠️ No se encontraron zonas de imbalance")
-                print(f"   ⏸️ Pausando escaneo ICC...")
-                return []
+                pass
             
             # 4. Esperar pullback
             pullback_signals = self.wait_for_pullback(df_5m, ob_data, fvg_data, context)
             
-            # Si no hay pullbacks, no continuar
+                        # Si no hay pullbacks, continuar de todas formas
             if not pullback_signals:
-                print(f"   ⚠️ No se detectaron pullbacks")
-                print(f"   ⏸️ Pausando escaneo ICC...")
-                return []
+                pass
             
             # 5. Confirmar Break of Structure
             confirmed_signals = self.confirm_break_of_structure(df_5m, pullback_signals)
             
-            # Si no hay confirmaciones, no continuar
+                        # Si no hay confirmaciones, continuar de todas formas
             if not confirmed_signals:
-                print(f"   ⚠️ No se confirmaron señales con BOS")
-                print(f"   ⏸️ Pausando escaneo ICC...")
-                return []
+                pass
             
             # 6. Calcular gestión de riesgo para cada señal
             final_signals = []
@@ -1037,11 +1061,7 @@ class ICCStrategy:
                     signal['timestamp_analysis'] = datetime.now()
                     
                     final_signals.append(signal)
-                    print(f"   🎯 SEÑAL ICC COMPLETA: {signal['direction']} en {signal['timestamp']}")
-            
-            print(f"\n🎯 ESCANEO ICC COMPLETADO")
-            print(f"   📊 Total de señales ICC: {len(final_signals)}")
-            print(f"   ✅ Todas las señales cumplen R:R mínimo 1:{self.risk_reward_min}")
+                    
             
             # Guardar señales
             self.signals = final_signals
