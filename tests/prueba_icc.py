@@ -585,8 +585,8 @@ def run_backtest():
         # Generar gráfico
         try:
             print(f"\n📈 Generando gráfico del backtesting...")
-            cerebro.plot(style='candlestick', barup='green', bardown='red', 
-                        volume=False, figsize=(15, 10))
+            #cerebro.plot(style='candlestick', barup='green', bardown='red', volume=False, figsize=(15, 10))
+            cerebro.plot()
             print(f"   ✅ Gráfico generado exitosamente")
         except Exception as e:
             print(f"   ❌ Error generando gráfico: {e}")
