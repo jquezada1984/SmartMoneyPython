@@ -705,7 +705,7 @@ class ICCStrategy:
             return None
 
     def calculate_structural_take_profits(self, df: pd.DataFrame, entry_price: float, direction: str, 
-                                        df_1h: pd.DataFrame = None, df_4h: pd.DataFrame = None) -> Dict:
+                                        stop_loss: float, df_1h: pd.DataFrame = None, df_4h: pd.DataFrame = None) -> Dict:
         """
         Calcular Take Profits basándose en el siguiente Order Block y niveles estructurales
         
@@ -729,8 +729,6 @@ class ICCStrategy:
         try:
             tp_levels = {
                 'tp1': None,  # R:R 1:1 mínimo
-                'tp2': None,  # R:R 1:2
-                'tp3': None,  # R:R 1:3
                 'structural_levels': []
             }
             
@@ -805,53 +803,60 @@ class ICCStrategy:
                         equal_lows = self._find_equal_levels(swing_lows, tolerance=0.001)
                         structural_levels.extend([level for level in equal_lows if level < entry_price][:2])
             
-            # 4. CALCULAR TP BASÁNDOSE EN EL SIGUIENTE ORDER BLOCK Y NIVELES ESTRUCTURALES
+            # 4. CALCULAR UN SOLO TP QUE SEA MAYOR QUE LA DISTANCIA DEL STOP LOSS
             if next_ob:
-        
-                
                 # Usar el siguiente Order Block como base para TP
                 if direction == 'LONG':
-                    # Para LONG, usar el high del siguiente Order Block como TP principal
-                    tp_levels['tp1'] = next_ob['high']  # R:R 1:1
-                    tp_levels['tp2'] = next_ob['high'] + (next_ob['high'] - next_ob['low']) * 0.5  # R:R 1:2
-                    tp_levels['tp3'] = next_ob['high'] + (next_ob['high'] - next_ob['low'])  # R:R 1:3
+                    # Para LONG, usar el high del siguiente Order Block como TP
+                    tp_levels['tp1'] = next_ob['high']
                 else:  # SHORT
-                    # Para SHORT, usar el low del siguiente Order Block como TP principal
-                    tp_levels['tp1'] = next_ob['low']  # R:R 1:1
-                    tp_levels['tp2'] = next_ob['low'] - (next_ob['high'] - next_ob['low']) * 0.5  # R:R 1:2
-                    tp_levels['tp3'] = next_ob['low'] - (next_ob['high'] - next_ob['low'])  # R:R 1:3
+                    # Para SHORT, usar el low del siguiente Order Block como TP
+                    tp_levels['tp1'] = next_ob['low']
                 
-                # Agregar niveles estructurales adicionales si están disponibles
-                if structural_levels:
-                    if direction == 'LONG':
-                        structural_levels = sorted([level for level in structural_levels if level > entry_price])
-                    else:  # SHORT
-                        structural_levels = sorted([level for level in structural_levels if level < entry_price], reverse=True)
-                    
-                    # Usar niveles estructurales como TP adicionales si son mejores
-                    if len(structural_levels) >= 1 and structural_levels[0] > tp_levels['tp1']:
-                        tp_levels['tp2'] = structural_levels[0]
-                    if len(structural_levels) >= 2 and structural_levels[1] > tp_levels['tp2']:
-                        tp_levels['tp3'] = structural_levels[1]
+                # Verificar que el TP sea mayor que la distancia del Stop Loss
+                stop_distance = abs(entry_price - stop_loss)
+                tp_distance = abs(tp_levels['tp1'] - entry_price)
+                
+                if tp_distance <= stop_distance:
+                    # Si el TP está muy cerca, buscar un nivel estructural mejor
+                    if structural_levels:
+                        if direction == 'LONG':
+                            better_levels = [level for level in structural_levels if level > entry_price and abs(level - entry_price) > stop_distance]
+                        else:  # SHORT
+                            better_levels = [level for level in structural_levels if level < entry_price and abs(level - entry_price) > stop_distance]
+                        
+                        if better_levels:
+                            if direction == 'LONG':
+                                tp_levels['tp1'] = min(better_levels)  # El más cercano pero mayor que SL
+                            else:
+                                tp_levels['tp1'] = max(better_levels)  # El más cercano pero mayor que SL
                 
                 tp_levels['structural_levels'] = [next_ob['high'], next_ob['low'], next_ob['mid']] + structural_levels[:3]
+                
             elif structural_levels:
                 # Fallback: usar solo niveles estructurales si no hay Order Block
-        
-                
                 # Ordenar niveles según la dirección
                 if direction == 'LONG':
                     structural_levels = sorted([level for level in structural_levels if level > entry_price])
                 else:  # SHORT
                     structural_levels = sorted([level for level in structural_levels if level < entry_price], reverse=True)
                 
-                # Asignar TP1, TP2, TP3 a los niveles más cercanos
-                if len(structural_levels) >= 1:
-                    tp_levels['tp1'] = structural_levels[0]
-                if len(structural_levels) >= 2:
-                    tp_levels['tp2'] = structural_levels[1]
-                if len(structural_levels) >= 3:
-                    tp_levels['tp3'] = structural_levels[2]
+                # Buscar el primer nivel que esté a una distancia mayor que el Stop Loss
+                stop_distance = abs(entry_price - stop_loss)
+                valid_tp = None
+                
+                for level in structural_levels:
+                    tp_distance = abs(level - entry_price)
+                    if tp_distance > stop_distance:
+                        valid_tp = level
+                        break
+                
+                if valid_tp:
+                    tp_levels['tp1'] = valid_tp
+                else:
+                    # Si no hay nivel válido, usar el más cercano pero ajustar
+                    if structural_levels:
+                        tp_levels['tp1'] = structural_levels[0]
                 
                 tp_levels['structural_levels'] = structural_levels[:5]  # Guardar hasta 5 niveles
             
@@ -951,19 +956,15 @@ class ICCStrategy:
                     stop_loss = entry_price * 1.005  # 0.5% por defecto
             
             # Calcular Take Profits estructurales
-            tp_levels = self.calculate_structural_take_profits(df, entry_price, direction, df_1h, df_4h)
+            tp_levels = self.calculate_structural_take_profits(df, entry_price, direction, stop_loss, df_1h, df_4h)
             
             # Si no hay niveles estructurales, usar R:R tradicional
             if tp_levels['tp1'] is None:
                 risk = abs(entry_price - stop_loss)
                 if direction == 'LONG':
-                    tp_levels['tp1'] = entry_price + (risk * 1.0)  # R:R 1:1
-                    tp_levels['tp2'] = entry_price + (risk * 2.0)  # R:R 1:2
-                    tp_levels['tp3'] = entry_price + (risk * 3.0)  # R:R 1:3
+                    tp_levels['tp1'] = entry_price + (risk * 1.0)  # R:R 1:1 mínimo
                 else:  # SHORT
-                    tp_levels['tp1'] = entry_price - (risk * 1.0)  # R:R 1:1
-                    tp_levels['tp2'] = entry_price - (risk * 2.0)  # R:R 1:2
-                    tp_levels['tp3'] = entry_price - (risk * 3.0)  # R:R 1:3
+                    tp_levels['tp1'] = entry_price - (risk * 1.0)  # R:R 1:1 mínimo
             
             # Calcular R:R para TP1
             risk_amount = abs(entry_price - stop_loss)
@@ -972,8 +973,10 @@ class ICCStrategy:
             
             # Verificar si cumple R:R mínimo
             if risk_reward_ratio < self.risk_reward_min:
-        
+                print(f"   ❌ SEÑAL RECHAZADA: R:R {risk_reward_ratio:.2f} no cumple mínimo {self.risk_reward_min}")
                 return None
+            else:
+                print(f"   ✅ SEÑAL APROBADA: R:R {risk_reward_ratio:.2f} cumple mínimo {self.risk_reward_min}")
             
             result = {
                 'entry_price': entry_price,
@@ -983,7 +986,7 @@ class ICCStrategy:
                 'risk_amount': risk_amount,
                 'reward_amount': reward_amount,
                 'tp_levels': tp_levels,
-                'meets_minimum_rr': True
+                'meets_min_ratio': True
             }
             
 
@@ -1055,13 +1058,41 @@ class ICCStrategy:
                 risk_management = self.calculate_risk_reward(signal, df_5m, df_1h, df_4h)
                 
                 if risk_management and risk_management.get('meets_min_ratio', False):
+                    # Imprimir información de la señal APROBADA
+                    print(f"\n🎯 SEÑAL ICC APROBADA:")
+                    print(f"   📊 TENDENCIA H1: {context.get('h1_trend', 'N/A')}")
+                    print(f"   📊 TENDENCIA H4: {context.get('h4_trend', 'N/A')}")
+                    print(f"   🎯 SESGO GENERAL: {context.get('overall_bias', 'N/A')}")
+                    print(f"   📈 DIRECCIÓN: {signal['direction']}")
+                    print(f"   💰 ENTRADA: {signal['entry_price']:.5f}")
                     # Agregar gestión de riesgo a la señal
                     signal['risk_management'] = risk_management
                     signal['context'] = context
                     signal['timestamp_analysis'] = datetime.now()
                     
-                    final_signals.append(signal)
+                    print(f"   🛑 STOP LOSS: {risk_management.get('stop_loss', 0):.5f}")
+                    print(f"   🎯 TAKE PROFIT: {risk_management.get('take_profit', 0):.5f}")
+                    print(f"   📊 R:R: 1:{risk_management.get('risk_reward_ratio', 0):.2f}")
+                    print(f"   🔍 FUENTE: {signal.get('source', 'N/A')}")
+                    print(f"   📊 DISTANCIA SL: {abs(signal['entry_price'] - risk_management.get('stop_loss', 0)):.5f}")
+                    print(f"   📊 DISTANCIA TP: {abs(risk_management.get('take_profit', 0) - signal['entry_price']):.5f}")
                     
+                    final_signals.append(signal)
+                elif risk_management:
+                    # Señal detectada pero rechazada por R:R
+                    print(f"\n⚠️ SEÑAL ICC RECHAZADA:")
+                    print(f"   📈 DIRECCIÓN: {signal['direction']}")
+                    print(f"   💰 ENTRADA: {signal['entry_price']:.5f}")
+                    print(f"   🛑 STOP LOSS: {risk_management.get('stop_loss', 0):.5f}")
+                    print(f"   🎯 TAKE PROFIT: {risk_management.get('take_profit', 0):.5f}")
+                    print(f"   📊 R:R: 1:{risk_management.get('risk_reward_ratio', 0):.2f} (MÍNIMO: 1:{self.risk_reward_min})")
+                    print(f"   ❌ MOTIVO: R:R insuficiente")
+                else:
+                    # No se pudo calcular gestión de riesgo
+                    print(f"\n❌ SEÑAL ICC SIN GESTIÓN DE RIESGO:")
+                    print(f"   📈 DIRECCIÓN: {signal['direction']}")
+                    print(f"   💰 ENTRADA: {signal['entry_price']:.5f}")
+                    print(f"   ❌ MOTIVO: No se pudo calcular Stop Loss o Take Profit")
             
             # Guardar señales
             self.signals = final_signals

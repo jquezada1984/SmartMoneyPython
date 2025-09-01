@@ -186,10 +186,15 @@ class ICCStrategy(bt.Strategy):
                         }
                         
                         # Ejecutar orden según dirección
+                        print(f"   🚀 EJECUTANDO ORDEN: {direction}")
                         if direction == 'LONG':
+                            print(f"   📈 ENVIANDO ORDEN DE COMPRA...")
                             self.order = self.buy()
                         elif direction == 'SHORT':
+                            print(f"   📉 ENVIANDO ORDEN DE VENTA...")
                             self.order = self.sell()
+                        
+                        print(f"   ✅ ORDEN ENVIADA: {self.order}")
                         # Solo procesar la primera señal
                         break
                 else:
@@ -256,7 +261,10 @@ class ICCStrategy(bt.Strategy):
             return
         
         if order.status in [order.Completed]:
-            print(f"   ✅ Orden COMPLETADA: {order.ref}")
+            print(f"   ✅ ORDEN COMPLETADA: {order.ref}")
+            print(f"   💰 Precio de ejecución: {order.executed.price:.5f}")
+            print(f"   📊 Cantidad: {order.executed.size}")
+            print(f"   💸 Comisión: {order.executed.comm:.2f}")
             if order.isbuy():
                 # Mostrar información de gestión de riesgo para compras
                 if self.current_position_info and self.current_position_info['direction'] == 'LONG':
@@ -292,8 +300,10 @@ class ICCStrategy(bt.Strategy):
     def notify_trade(self, trade):
         """Notificar cambios en trades"""
         print(f"   📊 Notificación de trade: Cerrado={trade.isclosed}, P&L={trade.pnlcomm:.2f}")
+        print(f"   📊 Trade info: Size={trade.size}, Price={trade.price:.5f}")
         
         if not trade.isclosed:
+            print(f"   ⏳ Trade aún abierto, esperando cierre...")
             return
         
         # Calcular métricas del trade
@@ -371,16 +381,59 @@ class ICCStrategy(bt.Strategy):
         # Cerrar cualquier posición abierta al final del backtesting
         if self.position:
             self.log(f'🔚 Cerrando posición abierta al final del backtesting')
+            self.log(f'   📊 Posición actual: Size={self.position.size}, Price={self.position.price:.5f}')
+            
+            # Calcular P&L de la posición abierta
+            current_price = self.data.close[0]
+            if self.position.size > 0:  # LONG
+                pnl = (current_price - self.position.price) * self.position.size
+            else:  # SHORT
+                pnl = (self.position.price - current_price) * abs(self.position.size)
+            
+            # Contar como trade cerrado manualmente
+            self.trade_count += 1
+            if pnl > 0:
+                self.win_count += 1
+                result = "GANADORA"
+            else:
+                self.loss_count += 1
+                result = "PERDEDORA"
+            
+            self.log(f'📊 TRADE CERRADO - CIERRE MANUAL - {result} - P&L: {pnl:.2f}')
+            
             self.close()
             
         # Limpiar información de gestión de riesgo
         self.current_position_info = None
         
+        print(f"   📊 Contador de trades al final: {self.trade_count}")
+        
         if self.trade_count > 0:
             win_rate = (self.win_count / self.trade_count) * 100
             self.log(f'🏁 BACKTESTING COMPLETADO - {self.trade_count} operaciones - {win_rate:.1f}% éxito')
+            print(f"   📊 RESUMEN DE OPERACIONES:")
+            print(f"      • Total de operaciones: {self.trade_count}")
+            print(f"      • Operaciones ganadoras: {self.win_count}")
+            print(f"      • Operaciones perdedoras: {self.loss_count}")
+            print(f"      • Tasa de éxito: {win_rate:.1f}%")
+            
+            # Mostrar resumen de señales ICC
+            if hasattr(self, 'smartmoney_icc') and hasattr(self.smartmoney_icc, 'signals'):
+                total_signals = len(self.smartmoney_icc.signals) if self.smartmoney_icc.signals else 0
+                print(f"   📊 RESUMEN DE SEÑALES ICC:")
+                print(f"      • Total de señales detectadas: {total_signals}")
+                if total_signals > 0:
+                    long_signals = len([s for s in self.smartmoney_icc.signals if s['direction'] == 'LONG'])
+                    short_signals = len([s for s in self.smartmoney_icc.signals if s['direction'] == 'SHORT'])
+                    print(f"      • Señales LONG: {long_signals}")
+                    print(f"      • Señales SHORT: {short_signals}")
         else:
             self.log(f'🏁 BACKTESTING COMPLETADO - Sin operaciones')
+            print(f"   📊 RESUMEN: No se ejecutaron operaciones")
+            print(f"      • Posibles causas:")
+            print(f"         - Las señales no cumplieron el R:R mínimo")
+            print(f"         - No se detectaron señales ICC válidas")
+            print(f"         - Las órdenes no se ejecutaron correctamente")
 
 def load_data():
     """Cargar datos de EURUSD como en smart01.py"""
@@ -476,10 +529,67 @@ def run_backtest():
         final_value = cerebro.broker.getvalue()
         initial_value = 100000.0
         total_return = ((final_value - initial_value) / initial_value) * 100
+        
+        # Mostrar resultados
+        print(f"\n📊 RESULTADOS DEL BACKTESTING:")
+        print(f"   💰 Capital inicial: ${initial_value:,.2f}")
+        print(f"   💰 Capital final: ${final_value:,.2f}")
+        print(f"   📈 Retorno total: {total_return:.2f}%")
+        print(f"   ⏱️ Tiempo de ejecución: {end_time - start_time:.2f} segundos")
+        
+        # Mostrar analizadores si están disponibles
         try:
-            pass
-        except (KeyError, TypeError) as e:
-            pass
+            if hasattr(strategy, 'analyzers'):
+                # Ratio de Sharpe
+                if hasattr(strategy.analyzers.sharpe, 'get_analysis'):
+                    sharpe_ratio = strategy.analyzers.sharpe.get_analysis()
+                    if sharpe_ratio and 'sharperatio' in sharpe_ratio and sharpe_ratio['sharperatio'] is not None:
+                        print(f"   📊 Ratio de Sharpe: {sharpe_ratio['sharperatio']:.3f}")
+                    else:
+                        print(f"   📊 Ratio de Sharpe: No disponible")
+                
+                # Máximo Drawdown
+                if hasattr(strategy.analyzers.drawdown, 'get_analysis'):
+                    drawdown = strategy.analyzers.drawdown.get_analysis()
+                    if drawdown and 'max' in drawdown and 'drawdown' in drawdown['max'] and drawdown['max']['drawdown'] is not None:
+                        print(f"   📉 Máximo Drawdown: {drawdown['max']['drawdown']:.2f}%")
+                    else:
+                        print(f"   📉 Máximo Drawdown: No disponible")
+                
+                # Retorno total
+                if hasattr(strategy.analyzers.returns, 'get_analysis'):
+                    returns = strategy.analyzers.returns.get_analysis()
+                    if returns and 'rtot' in returns and returns['rtot'] is not None:
+                        print(f"   📈 Retorno total: {returns['rtot']:.2f}%")
+                    else:
+                        print(f"   📈 Retorno total: No disponible")
+                
+                # Análisis de trades
+                if hasattr(strategy.analyzers.trades, 'get_analysis'):
+                    trades_analysis = strategy.analyzers.trades.get_analysis()
+                    if trades_analysis:
+                        total_trades = trades_analysis.get('total', {}).get('total', 0)
+                        won_trades = trades_analysis.get('won', {}).get('total', 0)
+                        lost_trades = trades_analysis.get('lost', {}).get('total', 0)
+                        print(f"   📊 Análisis de trades:")
+                        print(f"      • Total de trades: {total_trades}")
+                        print(f"      • Trades ganadores: {won_trades}")
+                        print(f"      • Trades perdedores: {lost_trades}")
+                        if total_trades > 0:
+                            win_rate = (won_trades / total_trades) * 100
+                            print(f"      • Tasa de éxito: {win_rate:.1f}%")
+        except Exception as e:
+            print(f"   ⚠️ Error mostrando analizadores: {e}")
+            print(f"   📊 Los analizadores pueden no estar disponibles para este período de datos")
+        
+        # Generar gráfico
+        try:
+            print(f"\n📈 Generando gráfico del backtesting...")
+            cerebro.plot(style='candlestick', barup='green', bardown='red', 
+                        volume=False, figsize=(15, 10))
+            print(f"   ✅ Gráfico generado exitosamente")
+        except Exception as e:
+            print(f"   ❌ Error generando gráfico: {e}")
         
         return strategy
         
