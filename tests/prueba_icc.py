@@ -24,6 +24,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Importar la estrategia ICC real
 from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
 
+# Importar el generador de imágenes
+try:
+    from image_generator import generate_signal_image
+except ImportError:
+    # Si no se puede importar directamente, usar import relativo
+    from .image_generator import generate_signal_image
+
 class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
     
@@ -67,6 +74,11 @@ class ICCStrategy(bt.Strategy):
         
         print(f"🚀 Estrategia ICC SmartMoney inicializada")
         print(f"   🎯 Mínimo R:R requerido: 1:1")
+        print(f"   🎨 Generación de imágenes automática: ACTIVADA")
+        print(f"      • Imagen al detectar señal ICC")
+        print(f"      • Imagen al ejecutar orden")
+        print(f"      • Imagen al cerrar trade")
+        print(f"      • Imagen al cierre manual del backtesting")
         
     def log(self, txt, dt=None):
         """Función de logging"""
@@ -160,30 +172,38 @@ class ICCStrategy(bt.Strategy):
                         # Obtener gestión de riesgo ICC
                         risk_management = signal.get('risk_management', {})
                         stop_loss = risk_management.get('stop_loss')
-                        take_profit = risk_management.get('take_profit')
+                        take_profit = risk_management.get('take_profit')  # TP ESTRUCTURAL ÚNICO
                         risk_reward_ratio = risk_management.get('risk_reward_ratio', 0)
                         
-                        # Obtener niveles de TP estructurales
-                        tp_levels = risk_management.get('tp_levels', {})
-                        tp1 = tp_levels.get('tp1')  # R:R 1:1
-                        tp2 = tp_levels.get('tp2')  # R:R 1:2  
-                        tp3 = tp_levels.get('tp3')  # R:R 1:3
-                        structural_levels = tp_levels.get('structural_levels', [])
+                        # Obtener niveles estructurales (para referencia)
+                        structural_levels = risk_management.get('structural_levels', [])
                         
                         # Almacenar información de la posición para gestión de riesgo
                         self.current_position_info = {
                             'direction': direction,
                             'entry_price': entry_price,
                             'stop_loss': stop_loss,
-                            'take_profit': tp1,  # Usar TP1 (1:1) como TP principal
+                            'take_profit': take_profit,  # UN SOLO TP ESTRUCTURAL
                             'risk_reward_ratio': risk_reward_ratio,
-                            'tp_levels': {
-                                'tp1': tp1,
-                                'tp2': tp2,
-                                'tp3': tp3,
-                                'structural_levels': structural_levels
-                            }
+                            'structural_levels': structural_levels
                         }
+                        
+                        # GENERAR IMAGEN DE LA SEÑAL ICC
+                        print(f"   🎨 Generando imagen de señal ICC...")
+                        try:
+                            # Generar imagen con los datos actuales y la señal detectada
+                            image_filename = generate_signal_image(
+                                data_buffer=self.data_buffer,
+                                icc_signals=signals,
+                                signal_type="ICC"
+                            )
+                            
+                            if image_filename:
+                                print(f"   🖼️ Imagen de señal ICC generada exitosamente: {image_filename}")
+                            else:
+                                print(f"   ⚠️ No se pudo generar la imagen de la señal ICC")
+                        except Exception as e:
+                            print(f"   ❌ Error generando imagen de señal ICC: {e}")
                         
                         # Ejecutar orden según dirección
                         print(f"   🚀 EJECUTANDO ORDEN: {direction}")
@@ -216,9 +236,8 @@ class ICCStrategy(bt.Strategy):
         direction = self.current_position_info['direction']
         entry_price = self.current_position_info['entry_price']
         stop_loss = self.current_position_info['stop_loss']
-        tp_levels = self.current_position_info.get('tp_levels', {})
         
-        # Obtener Take Profit estructural
+        # Obtener Take Profit estructural ÚNICO
         take_profit = self.current_position_info.get('take_profit')
         rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
         
@@ -230,7 +249,7 @@ class ICCStrategy(bt.Strategy):
                 self.current_position_info = None
                 return
                 
-            # Verificar Take Profit estructural
+            # Verificar Take Profit estructural ÚNICO
             if take_profit and current_price >= take_profit:
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
@@ -245,7 +264,7 @@ class ICCStrategy(bt.Strategy):
                 self.current_position_info = None
                 return
                 
-            # Verificar Take Profit estructural
+            # Verificar Take Profit estructural ÚNICO
             if take_profit and current_price <= take_profit:
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
@@ -265,6 +284,35 @@ class ICCStrategy(bt.Strategy):
             print(f"   💰 Precio de ejecución: {order.executed.price:.5f}")
             print(f"   📊 Cantidad: {order.executed.size}")
             print(f"   💸 Comisión: {order.executed.comm:.2f}")
+            
+            # GENERAR IMAGEN DE CONFIRMACIÓN DE ORDEN EJECUTADA
+            if self.current_position_info:
+                print(f"   🎨 Generando imagen de confirmación de orden ejecutada...")
+                try:
+                    # Crear señal de confirmación con el precio real de ejecución
+                    confirmation_signal = [{
+                        'direction': self.current_position_info['direction'],
+                        'entry_price': order.executed.price,  # Precio real de ejecución
+                        'risk_management': {
+                            'stop_loss': self.current_position_info['stop_loss'],
+                            'take_profit': self.current_position_info['take_profit']
+                        }
+                    }]
+                    
+                    # Generar imagen de confirmación
+                    confirmation_image = generate_signal_image(
+                        data_buffer=self.data_buffer,
+                        icc_signals=confirmation_signal,
+                        signal_type="CONFIRMACION"
+                    )
+                    
+                    if confirmation_image:
+                        print(f"   🖼️ Imagen de confirmación generada: {confirmation_image}")
+                    else:
+                        print(f"   ⚠️ No se pudo generar la imagen de confirmación")
+                except Exception as e:
+                    print(f"   ❌ Error generando imagen de confirmación: {e}")
+            
             if order.isbuy():
                 # Mostrar información de gestión de riesgo para compras
                 if self.current_position_info and self.current_position_info['direction'] == 'LONG':
@@ -288,7 +336,7 @@ class ICCStrategy(bt.Strategy):
                     self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
                     self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
                     self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
-                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
+                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.2f} (R:R 1:{rr_ratio:.2f})')
                 else:
                     self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
         
@@ -319,33 +367,49 @@ class ICCStrategy(bt.Strategy):
         close_type = "MANUAL"
         if self.current_position_info:
             stop_loss = self.current_position_info['stop_loss']
-            tp_levels = self.current_position_info.get('tp_levels', {})
-            tp1 = tp_levels.get('tp1')
-            tp2 = tp_levels.get('tp2')
-            tp3 = tp_levels.get('tp3')
+            take_profit = self.current_position_info.get('take_profit')  # TP ESTRUCTURAL ÚNICO
             
             if direction == 'LONG':
                 if current_price <= stop_loss:
                     close_type = "STOP LOSS"
-                elif tp3 and current_price >= tp3:
-                    close_type = "TAKE PROFIT 1:3"
-                elif tp2 and current_price >= tp2:
-                    close_type = "TAKE PROFIT 1:2"
-                elif tp1 and current_price >= tp1:
-                    close_type = "TAKE PROFIT 1:1"
+                elif take_profit and current_price >= take_profit:
+                    close_type = "TAKE PROFIT ESTRUCTURAL"
             else:  # SHORT
                 if current_price >= stop_loss:
                     close_type = "STOP LOSS"
-                elif tp3 and current_price <= tp3:
-                    close_type = "TAKE PROFIT 1:3"
-                elif tp2 and current_price <= tp2:
-                    close_type = "TAKE PROFIT 1:2"
-                elif tp1 and current_price <= tp1:
-                    close_type = "TAKE PROFIT 1:1"
+                elif take_profit and current_price <= take_profit:
+                    close_type = "TAKE PROFIT ESTRUCTURAL"
         
         # Mostrar información simplificada del trade
         result = "GANADORA" if pnlcomm > 0 else "PERDEDORA"
         self.log(f'📊 TRADE CERRADO - {close_type} - {result} - P&L: {pnlcomm:.2f}')
+        
+        # GENERAR IMAGEN DE CIERRE DE TRADE
+        print(f"   🎨 Generando imagen de cierre de trade...")
+        try:
+            # Crear señal de cierre con información del trade
+            close_signal = [{
+                'direction': direction,
+                'entry_price': trade.price,
+                'risk_management': {
+                    'stop_loss': 0,  # No aplica para cierre
+                    'take_profit': current_price  # Precio de cierre
+                }
+            }]
+            
+            # Generar imagen de cierre
+            close_image = generate_signal_image(
+                data_buffer=self.data_buffer,
+                icc_signals=close_signal,
+                signal_type="CIERRE"
+            )
+            
+            if close_image:
+                print(f"   🖼️ Imagen de cierre de trade generada: {close_image}")
+            else:
+                print(f"   ⚠️ No se pudo generar la imagen de cierre")
+        except Exception as e:
+            print(f"   ❌ Error generando imagen de cierre: {e}")
         
         # Actualizar contadores
         self.trade_count += 1
@@ -401,10 +465,48 @@ class ICCStrategy(bt.Strategy):
             
             self.log(f'📊 TRADE CERRADO - CIERRE MANUAL - {result} - P&L: {pnl:.2f}')
             
+            # GENERAR IMAGEN DE CIERRE MANUAL AL FINAL DEL BACKTESTING
+            print(f"   🎨 Generando imagen de cierre manual...")
+            try:
+                # Crear señal de cierre manual
+                manual_close_signal = [{
+                    'direction': 'LONG' if self.position.size > 0 else 'SHORT',
+                    'entry_price': self.position.price,
+                    'risk_management': {
+                        'stop_loss': 0,  # No aplica para cierre manual
+                        'take_profit': current_price  # Precio de cierre
+                    }
+                }]
+                
+                # Generar imagen de cierre manual
+                manual_close_image = generate_signal_image(
+                    data_buffer=self.data_buffer,
+                    icc_signals=manual_close_signal,
+                    signal_type="CIERRE_MANUAL"
+                )
+                
+                if manual_close_image:
+                    print(f"   🖼️ Imagen de cierre manual generada: {manual_close_image}")
+                else:
+                    print(f"   ⚠️ No se pudo generar la imagen de cierre manual")
+            except Exception as e:
+                print(f"   ❌ Error generando imagen de cierre manual: {e}")
+            
             self.close()
             
         # Limpiar información de gestión de riesgo
         self.current_position_info = None
+        
+        # Contar imágenes generadas
+        images_dir = "frames_png"
+        if os.path.exists(images_dir):
+            image_files = [f for f in os.listdir(images_dir) if f.startswith("ICC_Signal_")]
+            print(f"   🎨 Total de imágenes generadas: {len(image_files)}")
+            if image_files:
+                print(f"      • Imágenes guardadas en: {images_dir}/")
+                print(f"      • Archivos: {', '.join(image_files[-5:])}")  # Mostrar últimas 5 imágenes
+        else:
+            print(f"   🎨 No se generaron imágenes (directorio no encontrado)")
         
         print(f"   📊 Contador de trades al final: {self.trade_count}")
         
@@ -439,7 +541,7 @@ def load_data():
     """Cargar datos de EURUSD como en smart01.py"""
     try:
         # Usar el archivo CSV de datos de EURUSD
-        csv_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+        csv_path = "test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
         
         if not os.path.exists(csv_path):
             print(f"❌ Error: No se encontró el archivo {csv_path}")
