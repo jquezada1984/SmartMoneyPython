@@ -1103,6 +1103,61 @@ class ICCStrategy:
             print(f"   ❌ Error en escaneo ICC: {e}")
             return []
     
+    def get_smc_data(self, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> Dict:
+        """
+        Obtiene todos los datos SMC analizados para visualización en gráficos
+        
+        Parámetros:
+        -----------
+        df_5m : DataFrame
+            Datos de 5 minutos
+        df_1h : DataFrame
+            Datos de 1 hora
+        df_4h : DataFrame
+            Datos de 4 horas
+        
+        Retorna:
+        --------
+        Dict con todos los datos SMC para visualización
+        """
+        try:
+            # Obtener contexto de timeframes superiores
+            context = self.analyze_higher_timeframes(df_5m, df_1h, df_4h)
+            
+            # Obtener datos SMC
+            ob_data = self.identify_order_blocks(df_5m)
+            fvg_data = self.identify_fair_value_gaps(df_5m)
+            swing_data = self.identify_swing_points(df_5m)
+            bos_choch_data = self.identify_bos_choch(df_5m)
+            
+            # Preparar datos para visualización
+            smc_data = {
+                'order_blocks': ob_data,
+                'fvg_data': fvg_data,
+                'swing_data': swing_data,
+                'bos_choch_data': bos_choch_data,
+                'trends': {
+                    'h1_trend': context.get('h1_trend', 'N/A'),
+                    'h4_trend': context.get('h4_trend', 'N/A'),
+                    'overall_bias': context.get('overall_bias', 'N/A'),
+                    'trend_strength': context.get('trend_strength', 0)
+                }
+            }
+            
+            print(f"   📊 Datos SMC extraídos para visualización:")
+            print(f"      • Order Blocks: {len(ob_data) if not ob_data.empty else 0}")
+            print(f"      • Fair Value Gaps: {len(fvg_data) if not fvg_data.empty else 0}")
+            print(f"      • Swing Points: {len(swing_data) if not swing_data.empty else 0}")
+            print(f"      • BOS/CHOCH: {len(bos_choch_data) if not bos_choch_data.empty else 0}")
+            print(f"      • Tendencias H1: {context.get('h1_trend', 'N/A')}")
+            print(f"      • Tendencias H4: {context.get('h4_trend', 'N/A')}")
+            
+            return smc_data
+            
+        except Exception as e:
+            print(f"   ❌ Error extrayendo datos SMC: {e}")
+            return {}
+    
     def get_signal_summary(self) -> Dict:
         """
         Obtiene resumen de las señales ICC detectadas

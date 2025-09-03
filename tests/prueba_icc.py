@@ -62,6 +62,11 @@ class ICCStrategy(bt.Strategy):
         self.data_buffer = []
         self.last_analysis_time = None
         
+        # Almacenar DataFrames de múltiples timeframes para acceso en otros métodos
+        self.df_5m = None
+        self.df_1h = None
+        self.df_4h = None
+        
         # Variables para gestión de riesgo ICC
         self.current_position_info = None  # Almacenar info de la posición actual
         self.stop_loss_level = None
@@ -156,6 +161,10 @@ class ICCStrategy(bt.Strategy):
                     'volume': 'sum'
                 }).dropna()
                 
+                # Almacenar DataFrames para acceso en otros métodos
+                self.df_5m = df_5m
+                self.df_1h = df_1h
+                self.df_4h = df_4h
 
                 try:
                     signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h, df_4h)
@@ -191,10 +200,25 @@ class ICCStrategy(bt.Strategy):
                         # GENERAR IMAGEN DE LA SEÑAL ICC
                         print(f"   🎨 Generando imagen de señal ICC...")
                         try:
-                            # Generar imagen con los datos actuales y la señal detectada
+                            # Obtener datos SMC de la estrategia ICC para mostrarlos en la imagen
+                            smc_data = self.smartmoney_icc.get_smc_data(df_5m, df_1h, df_4h)
+                            
+                            # Debug: Verificar qué datos SMC se obtuvieron
+                            print(f"   🔍 Datos SMC obtenidos de la estrategia:")
+                            if smc_data:
+                                print(f"      • Order Blocks: {len(smc_data.get('order_blocks', pd.DataFrame())) if not smc_data.get('order_blocks', pd.DataFrame()).empty else 0}")
+                                print(f"      • Fair Value Gaps: {len(smc_data.get('fvg_data', pd.DataFrame())) if not smc_data.get('fvg_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • Swing Points: {len(smc_data.get('swing_data', pd.DataFrame())) if not smc_data.get('swing_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • BOS/CHOCH: {len(smc_data.get('bos_choch_data', pd.DataFrame())) if not smc_data.get('bos_choch_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • Tendencias: {smc_data.get('trends', {})}")
+                            else:
+                                print(f"      ❌ No se obtuvieron datos SMC")
+
+                            # Generar imagen con los datos actuales, la señal detectada y los datos SMC reales
                             image_filename = generate_signal_image(
                                 data_buffer=self.data_buffer,
                                 icc_signals=signals,
+                                smc_data=smc_data,  # Pasar datos SMC reales
                                 signal_type="ICC"
                             )
                             
@@ -299,10 +323,14 @@ class ICCStrategy(bt.Strategy):
                         }
                     }]
                     
-                    # Generar imagen de confirmación
+                    # Obtener datos SMC para la imagen de confirmación
+                    smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+                    
+                    # Generar imagen de confirmación con datos SMC
                     confirmation_image = generate_signal_image(
                         data_buffer=self.data_buffer,
                         icc_signals=confirmation_signal,
+                        smc_data=smc_data,  # Pasar datos SMC reales
                         signal_type="CONFIRMACION"
                     )
                     
@@ -397,10 +425,14 @@ class ICCStrategy(bt.Strategy):
                 }
             }]
             
-            # Generar imagen de cierre
+            # Obtener datos SMC para la imagen de cierre
+            smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+            
+            # Generar imagen de cierre con datos SMC
             close_image = generate_signal_image(
                 data_buffer=self.data_buffer,
                 icc_signals=close_signal,
+                smc_data=smc_data,  # Pasar datos SMC reales
                 signal_type="CIERRE"
             )
             
@@ -478,10 +510,14 @@ class ICCStrategy(bt.Strategy):
                     }
                 }]
                 
-                # Generar imagen de cierre manual
+                # Obtener datos SMC para la imagen de cierre manual
+                smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+                
+                # Generar imagen de cierre manual con datos SMC
                 manual_close_image = generate_signal_image(
                     data_buffer=self.data_buffer,
                     icc_signals=manual_close_signal,
+                    smc_data=smc_data,  # Pasar datos SMC reales
                     signal_type="CIERRE_MANUAL"
                 )
                 
@@ -566,12 +602,25 @@ def load_data():
         print(f"🔄 Procesando fechas...")
         df.index = pd.to_datetime(df.index)
         
-        # Tomar solo las últimas 500 velas para el test
+        # Tomar solo las últimas 1500 velas para el test
         df = df.tail(1500)
         
-
-
+        print(f"   📊 Filas después de filtrado: {len(df)}")
+        print(f"   📅 Rango de fechas: {df.index.min()} a {df.index.max()}")
+        print(f"   📈 Precio más alto: {df['high'].max():.5f}")
+        print(f"   📉 Precio más bajo: {df['low'].min():.5f}")
         
+        # Verificar que tenemos datos válidos
+        if len(df) == 0:
+            print(f"❌ Error: No hay datos después del filtrado")
+            return None
+        
+        if df.isnull().any().any():
+            print(f"⚠️ Advertencia: Se encontraron valores nulos en los datos")
+            df = df.dropna()
+            print(f"   📊 Filas después de limpiar nulos: {len(df)}")
+        
+        print(f"✅ Datos cargados exitosamente para backtesting")
         return df
         
     except Exception as e:
@@ -583,7 +632,17 @@ def run_backtest():
 
         data = load_data()
         if data is None:
+            print(f"❌ Error: No se pudieron cargar los datos")
             return
+        
+        print(f"📊 Datos cargados para backtesting:")
+        print(f"   📈 Forma del DataFrame: {data.shape}")
+        print(f"   📅 Columnas: {list(data.columns)}")
+        print(f"   📊 Tipos de datos: {data.dtypes.to_dict()}")
+        print(f"   🔍 Primeras 3 filas:")
+        print(data.head(3))
+        print(f"   🔍 Últimas 3 filas:")
+        print(data.tail(3))
         
         # Crear el cerebro de Backtrader
         cerebro = bt.Cerebro()
