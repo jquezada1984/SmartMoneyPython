@@ -363,27 +363,39 @@ def add_icc_signals(fig, icc_signals, df, row=1, col=1):
                     # COMPRA: TP por encima del precio de entrada
                     
                     # AGREGAR LÍNEA HORIZONTAL CLARA PARA TP ESTRUCTURAL ÚNICO
-                    # Take Profit Estructural - Línea verde sólida
+                    # Take Profit Estructural - Línea verde sólida muy visible
                     fig.add_hline(
                         y=take_profit, 
                         line_dash="solid", 
-                        line_color="lime", 
-                        line_width=3,
-                        opacity=0.8,
-                        annotation_text=f"TP ESTRUCTURAL - {take_profit:.5f}",
+                        line_color="#00ff00",  # Verde brillante
+                        line_width=4,  # Línea más gruesa
+                        opacity=1.0,   # Opacidad completa
+                        annotation_text=f"🎯 TP ESTRUCTURAL: {take_profit:.5f}",
                         annotation_position="right",
+                        annotation=dict(
+                            font=dict(size=14, color='#00ff00', weight='bold'),
+                            bgcolor='rgba(0,0,0,0.8)',
+                            bordercolor='#00ff00',
+                            borderwidth=2
+                        ),
                         row=row, col=col
                     )
                     
-                    # Stop Loss - Línea roja sólida
+                    # Stop Loss - Línea roja sólida muy visible
                     fig.add_hline(
                         y=stop_loss, 
                         line_dash="solid", 
-                        line_color="red", 
-                        line_width=3,
-                        opacity=0.8,
-                        annotation_text=f"STOP LOSS - {stop_loss:.5f}",
+                        line_color="#ff0000",  # Rojo brillante
+                        line_width=4,  # Línea más gruesa
+                        opacity=1.0,   # Opacidad completa
+                        annotation_text=f"🛑 STOP LOSS: {stop_loss:.5f}",
                         annotation_position="right",
+                        annotation=dict(
+                            font=dict(size=14, color='#ff0000', weight='bold'),
+                            bgcolor='rgba(0,0,0,0.8)',
+                            bordercolor='#ff0000',
+                            borderwidth=2
+                        ),
                         row=row, col=col
                     )
                     
@@ -423,27 +435,39 @@ def add_icc_signals(fig, icc_signals, df, row=1, col=1):
                     # VENTA: TP por debajo del precio de entrada
                     
                     # AGREGAR LÍNEA HORIZONTAL CLARA PARA TP ESTRUCTURAL ÚNICO
-                    # Take Profit Estructural - Línea roja sólida
+                    # Take Profit Estructural - Línea roja sólida muy visible
                     fig.add_hline(
                         y=take_profit, 
                         line_dash="solid", 
-                        line_color="red", 
-                        line_width=3,
-                        opacity=0.8,
-                        annotation_text=f"TP ESTRUCTURAL - {take_profit:.5f}",
+                        line_color="#ff0000",  # Rojo brillante
+                        line_width=4,  # Línea más gruesa
+                        opacity=1.0,   # Opacidad completa
+                        annotation_text=f"🎯 TP ESTRUCTURAL: {take_profit:.5f}",
                         annotation_position="left",
+                        annotation=dict(
+                            font=dict(size=14, color='#ff0000', weight='bold'),
+                            bgcolor='rgba(0,0,0,0.8)',
+                            bordercolor='#ff0000',
+                            borderwidth=2
+                        ),
                         row=row, col=col
                     )
                     
-                    # Stop Loss - Línea verde sólida
+                    # Stop Loss - Línea verde sólida muy visible
                     fig.add_hline(
                         y=stop_loss, 
                         line_dash="solid", 
-                        line_color="green", 
-                        line_width=3,
-                        opacity=0.8,
-                        annotation_text=f"STOP LOSS - {stop_loss:.5f}",
+                        line_color="#00ff00",  # Verde brillante
+                        line_width=4,  # Línea más gruesa
+                        opacity=1.0,   # Opacidad completa
+                        annotation_text=f"🛑 STOP LOSS: {stop_loss:.5f}",
                         annotation_position="left",
+                        annotation=dict(
+                            font=dict(size=14, color='#00ff00', weight='bold'),
+                            bgcolor='rgba(0,0,0,0.8)',
+                            bordercolor='#00ff00',
+                            borderwidth=2
+                        ),
                         row=row, col=col
                     )
                     
@@ -531,17 +555,43 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
     - Nombre del archivo generado o None si hay error
     """
     try:
-        if not data_buffer or len(data_buffer) < 100:
+        if not data_buffer or len(data_buffer) < 50:
             print("   ⚠️ Insuficientes datos para generar imagen")
             return None
         
         # Convertir buffer a DataFrame
         df = pd.DataFrame(data_buffer)
-        df.set_index('datetime', inplace=True)
         
-        # Tomar las últimas 100 velas para visualización
-        window_size = min(100, len(df))
+        # Verificar que tenemos las columnas necesarias
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required_columns):
+            print(f"   ❌ Columnas faltantes. Disponibles: {list(df.columns)}")
+            return None
+        
+        # Convertir columnas a float
+        for col in required_columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Eliminar filas con valores nulos
+        df = df.dropna()
+        
+        if len(df) < 50:
+            print(f"   ⚠️ Después de limpiar datos, solo quedan {len(df)} filas")
+            return None
+        
+        # Establecer índice de datetime
+        if 'datetime' in df.columns:
+            df.set_index('datetime', inplace=True)
+        else:
+            # Si no hay datetime, usar índice numérico
+            df.index = range(len(df))
+        
+        # Tomar las últimas 80 velas para visualización clara
+        window_size = min(80, len(df))
         window_df = df.tail(window_size)
+        
+        print(f"   📊 Generando gráfico con {len(window_df)} velas")
+        print(f"   📈 Rango de precios: {window_df['low'].min():.5f} - {window_df['high'].max():.5f}")
         
         # Calcular indicadores técnicos
         if len(df) >= 26:
@@ -560,16 +610,16 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
             histogram = pd.Series([0] * len(window_df), index=window_df.index)
             rsi = pd.Series([50] * len(window_df), index=window_df.index)
         
-        # Crear subplots: Candlesticks (67%), MACD (17%), RSI (16%)
+        # Crear subplots: Candlesticks (70%), MACD (15%), RSI (15%)
         fig = sp.make_subplots(
             rows=3, cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.08,
-            row_heights=[0.67, 0.17, 0.16],
+            vertical_spacing=0.05,
+            row_heights=[0.70, 0.15, 0.15],
             subplot_titles=('EURUSD - Señal ICC con SMC Real + TP Estructural', 'MACD', 'RSI')
         )
         
-        # 1. GRÁFICO PRINCIPAL - CANDLESTICKS
+        # 1. GRÁFICO PRINCIPAL - CANDLESTICKS CON MEJOR VISIBILIDAD
         fig.add_trace(
             go.Candlestick(
                 x=window_df.index,
@@ -577,9 +627,12 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
                 high=window_df["high"],
                 low=window_df["low"],
                 close=window_df["close"],
-                increasing_line_color="#77dd76",
-                decreasing_line_color="#ff6962",
-                name="EURUSD"
+                increasing_line_color="#00ff88",  # Verde más brillante
+                decreasing_line_color="#ff4444",  # Rojo más brillante
+                increasing_fillcolor="#00ff88",
+                decreasing_fillcolor="#ff4444",
+                name="EURUSD",
+                line=dict(width=1.5)  # Líneas más gruesas
             ),
             row=1, col=1
         )
@@ -595,18 +648,18 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
                 title=dict(
                     text=signal_title,
                     x=0.5,
-                    font=dict(size=16, color='white')
+                    font=dict(size=18, color='white', weight='bold')
                 )
             )
         
-        # 2. GRÁFICO MACD
+        # 2. GRÁFICO MACD CON MEJOR VISIBILIDAD
         fig.add_trace(
             go.Scatter(
                 x=window_df.index,
                 y=macd_line,
                 mode='lines',
                 name='MACD',
-                line=dict(color='teal', width=1),
+                line=dict(color='#00ffff', width=2),  # Cian más brillante
                 showlegend=False
             ),
             row=2, col=1
@@ -740,20 +793,40 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
         
         print(f"   ✅ Todos los indicadores SMC agregados: FVG, Swing Points, BOS/CHOCH, Order Blocks, Liquidez")
         
-        # Configurar layout
+        # Configurar layout con mejor visibilidad
         fig.update_layout(
             template='plotly_dark',
-            width=1200,  # Aumentar ancho para mejor visualización
-            height=800,   # Aumentar altura para mejor visualización
+            width=1400,  # Aumentar ancho para mejor visualización
+            height=900,   # Aumentar altura para mejor visualización
             showlegend=False,
             xaxis_rangeslider_visible=False,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
+            plot_bgcolor='rgba(0,0,0,0.9)',  # Fondo más oscuro para mejor contraste
+            paper_bgcolor='rgba(0,0,0,0.9)',
+            font=dict(family="Arial, sans-serif", size=12, color="white")
         )
         
-        # Configurar ejes
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
+        # Configurar ejes con mejor visibilidad
+        fig.update_xaxes(
+            showgrid=True, 
+            gridwidth=1, 
+            gridcolor='rgba(255,255,255,0.3)',  # Grid más visible
+            showline=True,
+            linewidth=2,
+            linecolor='rgba(255,255,255,0.5)',
+            title_text="Tiempo",
+            title_font=dict(size=14, color="white")
+        )
+        
+        fig.update_yaxes(
+            showgrid=True, 
+            gridwidth=1, 
+            gridcolor='rgba(255,255,255,0.3)',  # Grid más visible
+            showline=True,
+            linewidth=2,
+            linecolor='rgba(255,255,255,0.5)',
+            title_text="Precio EURUSD",
+            title_font=dict(size=14, color="white")
+        )
         
         # Crear directorio para imágenes si no existe
         images_dir = "frames_png"
@@ -777,8 +850,8 @@ def generate_signal_image(data_buffer, icc_signals, signal_type="ICC"):
         
         filename = f"{images_dir}/ICC_Signal_{timestamp}{signal_suffix}.png"
         
-        # Guardar imagen con mayor resolución
-        fig.write_image(filename, width=1200, height=800)
+        # Guardar imagen con mayor resolución y calidad
+        fig.write_image(filename, width=1400, height=900, scale=2)  # scale=2 para mejor calidad
         
         print(f"   ✅ Imagen de señal ICC con SMC real generada: {filename}")
         return filename

@@ -200,25 +200,10 @@ class ICCStrategy(bt.Strategy):
                         # GENERAR IMAGEN DE LA SEÑAL ICC
                         print(f"   🎨 Generando imagen de señal ICC...")
                         try:
-                            # Obtener datos SMC de la estrategia ICC para mostrarlos en la imagen
-                            smc_data = self.smartmoney_icc.get_smc_data(df_5m, df_1h, df_4h)
-                            
-                            # Debug: Verificar qué datos SMC se obtuvieron
-                            print(f"   🔍 Datos SMC obtenidos de la estrategia:")
-                            if smc_data:
-                                print(f"      • Order Blocks: {len(smc_data.get('order_blocks', pd.DataFrame())) if not smc_data.get('order_blocks', pd.DataFrame()).empty else 0}")
-                                print(f"      • Fair Value Gaps: {len(smc_data.get('fvg_data', pd.DataFrame())) if not smc_data.get('fvg_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • Swing Points: {len(smc_data.get('swing_data', pd.DataFrame())) if not smc_data.get('swing_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • BOS/CHOCH: {len(smc_data.get('bos_choch_data', pd.DataFrame())) if not smc_data.get('bos_choch_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • Tendencias: {smc_data.get('trends', {})}")
-                            else:
-                                print(f"      ❌ No se obtuvieron datos SMC")
-
-                            # Generar imagen con los datos actuales, la señal detectada y los datos SMC reales
+                            # Generar imagen con los datos actuales y la señal detectada
                             image_filename = generate_signal_image(
                                 data_buffer=self.data_buffer,
                                 icc_signals=signals,
-                                smc_data=smc_data,  # Pasar datos SMC reales
                                 signal_type="ICC"
                             )
                             
@@ -323,14 +308,10 @@ class ICCStrategy(bt.Strategy):
                         }
                     }]
                     
-                    # Obtener datos SMC para la imagen de confirmación
-                    smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-                    
-                    # Generar imagen de confirmación con datos SMC
+                    # Generar imagen de confirmación
                     confirmation_image = generate_signal_image(
                         data_buffer=self.data_buffer,
                         icc_signals=confirmation_signal,
-                        smc_data=smc_data,  # Pasar datos SMC reales
                         signal_type="CONFIRMACION"
                     )
                     
@@ -425,14 +406,10 @@ class ICCStrategy(bt.Strategy):
                 }
             }]
             
-            # Obtener datos SMC para la imagen de cierre
-            smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-            
-            # Generar imagen de cierre con datos SMC
+            # Generar imagen de cierre
             close_image = generate_signal_image(
                 data_buffer=self.data_buffer,
                 icc_signals=close_signal,
-                smc_data=smc_data,  # Pasar datos SMC reales
                 signal_type="CIERRE"
             )
             
@@ -510,14 +487,10 @@ class ICCStrategy(bt.Strategy):
                     }
                 }]
                 
-                # Obtener datos SMC para la imagen de cierre manual
-                smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-                
-                # Generar imagen de cierre manual con datos SMC
+                # Generar imagen de cierre manual
                 manual_close_image = generate_signal_image(
                     data_buffer=self.data_buffer,
                     icc_signals=manual_close_signal,
-                    smc_data=smc_data,  # Pasar datos SMC reales
                     signal_type="CIERRE_MANUAL"
                 )
                 
@@ -577,7 +550,7 @@ def load_data():
     """Cargar datos de EURUSD como en smart01.py"""
     try:
         # Usar el archivo CSV de datos de EURUSD
-        csv_path = "test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+        csv_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
         
         if not os.path.exists(csv_path):
             print(f"❌ Error: No se encontró el archivo {csv_path}")
