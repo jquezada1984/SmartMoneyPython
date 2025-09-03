@@ -1103,6 +1103,145 @@ class ICCStrategy:
             print(f"   ❌ Error en escaneo ICC: {e}")
             return []
     
+    def identify_swing_points(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Identifica Swing Highs y Swing Lows en el DataFrame
+        
+        Parámetros:
+        -----------
+        df : DataFrame
+            Datos OHLCV con índice datetime
+        
+        Retorna:
+        --------
+        DataFrame con información de swing points
+        """
+        try:
+            if len(df) < self.swing_length * 2:
+                return pd.DataFrame()
+            
+            swing_data = []
+            
+            for i in range(self.swing_length, len(df) - self.swing_length):
+                # Verificar si es un Swing High
+                if (df['high'].iloc[i] == df['high'].iloc[i-self.swing_length:i+self.swing_length+1].max() and
+                    df['high'].iloc[i] > df['high'].iloc[i-1] and 
+                    df['high'].iloc[i] > df['high'].iloc[i+1]):
+                    
+                    swing_data.append({
+                        'index': i,
+                        'HighLow': 1,  # 1 para Swing High
+                        'Level': df['high'].iloc[i],
+                        'datetime': df.index[i]
+                    })
+                
+                # Verificar si es un Swing Low
+                elif (df['low'].iloc[i] == df['low'].iloc[i-self.swing_length:i+self.swing_length+1].min() and
+                      df['low'].iloc[i] < df['low'].iloc[i-1] and 
+                      df['low'].iloc[i] < df['low'].iloc[i+1]):
+                    
+                    swing_data.append({
+                        'index': i,
+                        'HighLow': -1,  # -1 para Swing Low
+                        'Level': df['low'].iloc[i],
+                        'datetime': df.index[i]
+                    })
+            
+            if swing_data:
+                return pd.DataFrame(swing_data)
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"Error identificando swing points: {e}")
+            return pd.DataFrame()
+
+    def identify_bos_choch(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Identifica Break of Structure (BOS) y Change of Character (CHOCH)
+        
+        Parámetros:
+        -----------
+        df : DataFrame
+            Datos OHLCV con índice datetime
+        
+        Retorna:
+        --------
+        DataFrame con información de BOS/CHOCH
+        """
+        try:
+            if len(df) < 50:
+                return pd.DataFrame()
+            
+            bos_choch_data = []
+            
+            # Buscar BOS (Break of Structure)
+            for i in range(20, len(df) - 20):
+                # BOS alcista: rompe swing high anterior
+                if (df['high'].iloc[i] > df['high'].iloc[i-20:i].max() and
+                    df['close'].iloc[i] > df['open'].iloc[i]):
+                    
+                    # Encontrar el swing high roto
+                    broken_level = df['high'].iloc[i-20:i].max()
+                    broken_index = df['high'].iloc[i-20:i].idxmax()
+                    
+                    bos_choch_data.append({
+                        'index': i,
+                        'BOS': 1,
+                        'CHOCH': 0,
+                        'Level': broken_level,
+                        'BrokenIndex': df.index.get_loc(broken_index),
+                        'ChoCHIndex': 0,
+                        'datetime': df.index[i]
+                    })
+                
+                # BOS bajista: rompe swing low anterior
+                elif (df['low'].iloc[i] < df['low'].iloc[i-20:i].min() and
+                      df['close'].iloc[i] < df['open'].iloc[i]):
+                    
+                    # Encontrar el swing low roto
+                    broken_level = df['low'].iloc[i-20:i].min()
+                    broken_index = df['low'].iloc[i-20:i].idxmin()
+                    
+                    bos_choch_data.append({
+                        'index': i,
+                        'BOS': 1,
+                        'CHOCH': 0,
+                        'Level': broken_level,
+                        'BrokenIndex': df.index.get_loc(broken_index),
+                        'ChoCHIndex': 0,
+                        'datetime': df.index[i]
+                    })
+                
+                # CHOCH (Change of Character) - cambio de tendencia
+                elif (i > 30 and 
+                      abs(df['close'].iloc[i] - df['close'].iloc[i-30]) / df['close'].iloc[i-30] > 0.01):
+                    
+                    # Determinar dirección del CHOCH
+                    if df['close'].iloc[i] > df['close'].iloc[i-30]:
+                        choch_type = 1  # CHOCH alcista
+                    else:
+                        choch_type = -1  # CHOCH bajista
+                    
+                    bos_choch_data.append({
+                        'index': i,
+                        'BOS': 0,
+                        'CHOCH': choch_type,
+                        'Level': df['close'].iloc[i],
+                        'BrokenIndex': 0,
+                        'ChoCHIndex': i - 30,
+                        'datetime': df.index[i]
+                    })
+            
+            if bos_choch_data:
+                return pd.DataFrame(bos_choch_data)
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"Error identificando BOS/CHOCH: {e}")
+            return pd.DataFrame()
+
     def get_smc_data(self, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> Dict:
         """
         Obtiene todos los datos SMC analizados para visualización en gráficos

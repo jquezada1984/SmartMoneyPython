@@ -24,17 +24,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Importar la estrategia ICC real
 from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
 
-# Importar el generador de imágenes
+# Importar el generador de imágenes SMC (basado en smart01.py)
 try:
-    from image_generator import generate_signal_image
+    from image_generator_c import generate_signal_image
 except ImportError:
     # Si no se puede importar directamente, usar import relativo
-    from .image_generator import generate_signal_image
+    from .image_generator_c import generate_signal_image
 
 class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
     
-    def __init__(self):
+    def __init__(self, df_1h=None, df_4h=None):
         # Indicadores técnicos básicos para Backtrader
         self.rsi = bt.indicators.RSI(self.data.close, period=14)
         self.macd = bt.indicators.MACD(self.data.close)
@@ -64,8 +64,8 @@ class ICCStrategy(bt.Strategy):
         
         # Almacenar DataFrames de múltiples timeframes para acceso en otros métodos
         self.df_5m = None
-        self.df_1h = None
-        self.df_4h = None
+        self.df_1h = df_1h  # Usar los datos pasados desde run_backtest
+        self.df_4h = df_4h  # Usar los datos pasados desde run_backtest
         
         # Variables para gestión de riesgo ICC
         self.current_position_info = None  # Almacenar info de la posición actual
@@ -144,30 +144,20 @@ class ICCStrategy(bt.Strategy):
                 df_5m = pd.DataFrame(self.data_buffer)
                 df_5m.set_index('datetime', inplace=True)
                 
-                # Crear timeframes superiores (simplificado para demo)
-                df_1h = df_5m.resample('1H').agg({
-                    'open': 'first',
-                    'high': 'max',
-                    'low': 'min',
-                    'close': 'last',
-                    'volume': 'sum'
-                }).dropna()
+                # Usar los datos de múltiples timeframes ya cargados
+                # Filtrar solo los datos que corresponden al período actual
+                current_time = df_5m.index[-1]
                 
-                df_4h = df_5m.resample('4H').agg({
-                    'open': 'first',
-                    'high': 'max',
-                    'low': 'min',
-                    'close': 'last',
-                    'volume': 'sum'
-                }).dropna()
+                # Filtrar datos H1 y H4 hasta el tiempo actual
+                df_1h_filtered = self.df_1h[self.df_1h.index <= current_time] if self.df_1h is not None else pd.DataFrame()
+                df_4h_filtered = self.df_4h[self.df_4h.index <= current_time] if self.df_4h is not None else pd.DataFrame()
                 
                 # Almacenar DataFrames para acceso en otros métodos
                 self.df_5m = df_5m
-                self.df_1h = df_1h
-                self.df_4h = df_4h
+                # No sobrescribir df_1h y df_4h, ya están establecidos en __init__
 
                 try:
-                    signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h, df_4h)
+                    signals = self.smartmoney_icc.scan_for_icc_signals(df_5m, df_1h_filtered, df_4h_filtered)
 
                 except Exception as e:
                     signals = None
@@ -200,10 +190,25 @@ class ICCStrategy(bt.Strategy):
                         # GENERAR IMAGEN DE LA SEÑAL ICC
                         print(f"   🎨 Generando imagen de señal ICC...")
                         try:
-                            # Generar imagen con los datos actuales y la señal detectada
+                            # Obtener datos SMC reales de la estrategia ICC para mostrarlos en la imagen
+                            smc_data = self.smartmoney_icc.get_smc_data(df_5m, df_1h_filtered, df_4h_filtered)
+                            
+                            # Debug: Verificar qué datos SMC se obtuvieron
+                            print(f"   🔍 Datos SMC obtenidos de la estrategia:")
+                            if smc_data:
+                                print(f"      • Order Blocks: {len(smc_data.get('order_blocks', pd.DataFrame())) if not smc_data.get('order_blocks', pd.DataFrame()).empty else 0}")
+                                print(f"      • Fair Value Gaps: {len(smc_data.get('fvg_data', pd.DataFrame())) if not smc_data.get('fvg_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • Swing Points: {len(smc_data.get('swing_data', pd.DataFrame())) if not smc_data.get('swing_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • BOS/CHOCH: {len(smc_data.get('bos_choch_data', pd.DataFrame())) if not smc_data.get('bos_choch_data', pd.DataFrame()).empty else 0}")
+                                print(f"      • Tendencias: {smc_data.get('trends', {})}")
+                            else:
+                                print(f"      ❌ No se obtuvieron datos SMC")
+                            
+                            # Generar imagen con los datos actuales, la señal detectada y los datos SMC reales
                             image_filename = generate_signal_image(
                                 data_buffer=self.data_buffer,
                                 icc_signals=signals,
+                                smc_data=smc_data,  # Pasar datos SMC reales
                                 signal_type="ICC"
                             )
                             
@@ -308,10 +313,14 @@ class ICCStrategy(bt.Strategy):
                         }
                     }]
                     
-                    # Generar imagen de confirmación
+                    # Obtener datos SMC para la imagen de confirmación
+                    smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+                    
+                    # Generar imagen de confirmación con datos SMC
                     confirmation_image = generate_signal_image(
                         data_buffer=self.data_buffer,
                         icc_signals=confirmation_signal,
+                        smc_data=smc_data,  # Pasar datos SMC reales
                         signal_type="CONFIRMACION"
                     )
                     
@@ -406,10 +415,14 @@ class ICCStrategy(bt.Strategy):
                 }
             }]
             
-            # Generar imagen de cierre
+            # Obtener datos SMC para la imagen de cierre
+            smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+            
+            # Generar imagen de cierre con datos SMC
             close_image = generate_signal_image(
                 data_buffer=self.data_buffer,
                 icc_signals=close_signal,
+                smc_data=smc_data,  # Pasar datos SMC reales
                 signal_type="CIERRE"
             )
             
@@ -487,10 +500,14 @@ class ICCStrategy(bt.Strategy):
                     }
                 }]
                 
-                # Generar imagen de cierre manual
+                # Obtener datos SMC para la imagen de cierre manual
+                smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
+                
+                # Generar imagen de cierre manual con datos SMC
                 manual_close_image = generate_signal_image(
                     data_buffer=self.data_buffer,
                     icc_signals=manual_close_signal,
+                    smc_data=smc_data,  # Pasar datos SMC reales
                     signal_type="CIERRE_MANUAL"
                 )
                 
@@ -547,75 +564,103 @@ class ICCStrategy(bt.Strategy):
             print(f"         - Las órdenes no se ejecutaron correctamente")
 
 def load_data():
-    """Cargar datos de EURUSD como en smart01.py"""
+    """Cargar datos de EURUSD de múltiples timeframes como en smart01.py"""
     try:
-        # Usar el archivo CSV de datos de EURUSD
-        csv_path = "tests/test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
+        # Cargar datos de 5M (timeframe principal)
+        csv_path_5m = "test_data/EURUSD/EURUSD_5M_2025_filtrado_fast.csv"
         
-        if not os.path.exists(csv_path):
-            print(f"❌ Error: No se encontró el archivo {csv_path}")
-            return None
+        if not os.path.exists(csv_path_5m):
+            print(f"❌ Error: No se encontró el archivo {csv_path_5m}")
+            return None, None, None
         
-        print(f"📂 Leyendo archivo: {csv_path}")
+        print(f"📂 Leyendo archivo 5M: {csv_path_5m}")
         
-        # Leer el CSV como en smart01.py
-        df = pd.read_csv(csv_path, index_col="datetime")
+        # Leer el CSV de 5M
+        df_5m = pd.read_csv(csv_path_5m, index_col="datetime")
         
-        print(f"✅ Archivo leído exitosamente")
-        print(f"   📊 Filas originales: {len(df)}")
+        print(f"✅ Archivo 5M leído exitosamente")
+        print(f"   📊 Filas originales: {len(df_5m)}")
         
         # Convertir todas las columnas a float
         print(f"🔄 Convirtiendo tipos de datos...")
-        df = df.astype(float)
+        df_5m = df_5m.astype(float)
         
         # Asegurar que las columnas estén en el orden correcto
-        df = df[["open", "high", "low", "close", "volume"]]
+        df_5m = df_5m[["open", "high", "low", "close", "volume"]]
         
         # Convertir el índice a datetime
         print(f"🔄 Procesando fechas...")
-        df.index = pd.to_datetime(df.index)
+        df_5m.index = pd.to_datetime(df_5m.index)
         
         # Tomar solo las últimas 1500 velas para el test
-        df = df.tail(1500)
+        df_5m = df_5m.tail(1500)
         
-        print(f"   📊 Filas después de filtrado: {len(df)}")
-        print(f"   📅 Rango de fechas: {df.index.min()} a {df.index.max()}")
-        print(f"   📈 Precio más alto: {df['high'].max():.5f}")
-        print(f"   📉 Precio más bajo: {df['low'].min():.5f}")
+        # Crear timeframes superiores desde los datos 5M reales
+        print(f"🔄 Creando timeframes superiores...")
+        
+        # H1 (1 hora) - agregar cada 12 velas de 5M
+        df_1h = df_5m.resample('1H').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        # H4 (4 horas) - agregar cada 48 velas de 5M
+        df_4h = df_5m.resample('4H').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        
+        print(f"   📊 Filas después de filtrado:")
+        print(f"      • 5M: {len(df_5m)} velas")
+        print(f"      • 1H: {len(df_1h)} velas")
+        print(f"      • 4H: {len(df_4h)} velas")
+        print(f"   📅 Rango de fechas: {df_5m.index.min()} a {df_5m.index.max()}")
+        print(f"   📈 Precio más alto: {df_5m['high'].max():.5f}")
+        print(f"   📉 Precio más bajo: {df_5m['low'].min():.5f}")
         
         # Verificar que tenemos datos válidos
-        if len(df) == 0:
+        if len(df_5m) == 0:
             print(f"❌ Error: No hay datos después del filtrado")
-            return None
+            return None, None, None
         
-        if df.isnull().any().any():
+        if df_5m.isnull().any().any():
             print(f"⚠️ Advertencia: Se encontraron valores nulos en los datos")
-            df = df.dropna()
-            print(f"   📊 Filas después de limpiar nulos: {len(df)}")
+            df_5m = df_5m.dropna()
+            print(f"   📊 Filas después de limpiar nulos: {len(df_5m)}")
         
         print(f"✅ Datos cargados exitosamente para backtesting")
-        return df
+        return df_5m, df_1h, df_4h
         
     except Exception as e:
-        return None
+        print(f"❌ Error cargando datos: {e}")
+        return None, None, None
 
 def run_backtest():
     """Ejecutar el backtesting completo"""
     try:
 
-        data = load_data()
-        if data is None:
+        # Cargar datos de múltiples timeframes
+        df_5m, df_1h, df_4h = load_data()
+        if df_5m is None:
             print(f"❌ Error: No se pudieron cargar los datos")
             return
         
         print(f"📊 Datos cargados para backtesting:")
-        print(f"   📈 Forma del DataFrame: {data.shape}")
-        print(f"   📅 Columnas: {list(data.columns)}")
-        print(f"   📊 Tipos de datos: {data.dtypes.to_dict()}")
-        print(f"   🔍 Primeras 3 filas:")
-        print(data.head(3))
-        print(f"   🔍 Últimas 3 filas:")
-        print(data.tail(3))
+        print(f"   📈 Forma del DataFrame 5M: {df_5m.shape}")
+        print(f"   📈 Forma del DataFrame 1H: {df_1h.shape}")
+        print(f"   📈 Forma del DataFrame 4H: {df_4h.shape}")
+        print(f"   📅 Columnas: {list(df_5m.columns)}")
+        print(f"   📊 Tipos de datos: {df_5m.dtypes.to_dict()}")
+        print(f"   🔍 Primeras 3 filas 5M:")
+        print(df_5m.head(3))
+        print(f"   🔍 Últimas 3 filas 5M:")
+        print(df_5m.tail(3))
         
         # Crear el cerebro de Backtrader
         cerebro = bt.Cerebro()
@@ -624,9 +669,9 @@ def run_backtest():
         cerebro.broker.setcash(100000.0)  # Capital inicial $100,000
         cerebro.broker.setcommission(commission=0.001)  # Comisión 0.1%
         
-        # Agregar datos
+        # Agregar datos 5M (timeframe principal)
         data_feed = bt.feeds.PandasData(
-            dataname=data,
+            dataname=df_5m,
             datetime=None,  # Usar el índice como datetime
             open=0,
             high=1,
@@ -637,8 +682,8 @@ def run_backtest():
         )
         cerebro.adddata(data_feed)
         
-        # Agregar estrategia
-        cerebro.addstrategy(ICCStrategy)
+        # Agregar estrategia con datos de múltiples timeframes
+        cerebro.addstrategy(ICCStrategy, df_1h=df_1h, df_4h=df_4h)
         
         # Configurar plotting para mostrar señales automáticamente
         cerebro.addobserver(bt.observers.BuySell, barplot=True, bardist=0.0025)
