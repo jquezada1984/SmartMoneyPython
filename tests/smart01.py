@@ -1504,6 +1504,3 @@ print(f"      • 5M: market_analysis_lib.detect_trend('structural') para estruc
 print(f"      • 15M, 1H, 4H: market_analysis_lib.detect_trend('structural') para tendencias")
 print(f"      • Indicadores técnicos estándar (MACD, RSI)")
 print(f"      • Fallback a análisis simple si SMC falla")
-
-
- 

@@ -25,37 +25,14 @@ import numpy as np
 from datetime import datetime
 import os
 
-# ============================================================================
-# FUNCIONES DE CÁLCULO DE INDICADORES TÉCNICOS
-# ============================================================================
 
-def calculate_macd(df, fast=12, slow=26, signal=9):
-    """Calcular MACD: MACD Line, Signal Line, Histogram"""
-    exp1 = df['close'].ewm(span=fast, adjust=False).mean()
-    exp2 = df['close'].ewm(span=slow, adjust=False).mean()
-    macd_line = exp1 - exp2
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
 
-def calculate_rsi(df, period=14):
-    """Calcular RSI"""
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
 
 # ============================================================================
 # FUNCIONES PARA AGREGAR INDICADORES SMC AL GRÁFICO
 # ============================================================================
 
 def add_FVG(fig, df, fvg_data):
-    """Agregar Fair Value Gaps al gráfico"""
-    if fvg_data is None or fvg_data.empty:
-        return fig
-        
     window_size = len(df)
     
     # Asegurarse de que fvg_data use los mismos índices que df
@@ -210,60 +187,114 @@ def add_OB(fig, df, ob_data):
     """Agregar Order Blocks al gráfico"""
     if ob_data is None or ob_data.empty:
         return fig
-        
+    
+    def format_volume(volume):
+        if volume >= 1e12:
+            return f"{volume / 1e12:.3f}T"
+        elif volume >= 1e9:
+            return f"{volume / 1e9:.3f}B"
+        elif volume >= 1e6:
+            return f"{volume / 1e6:.3f}M"
+        elif volume >= 1e3:
+            return f"{volume / 1e3:.3f}k"
+        else:
+            return f"{volume:.2f}"
+
     window_size = len(df)
     
-    # Asegurarse de que ob_data use los mismos índices que df
+    # Asegurarse de que ob_data use los mismos índices que df - EXACTAMENTE como smart01.py
     ob_data = ob_data.reset_index(drop=True)
-    
+
     for i in range(len(ob_data)):
         if i >= window_size:
             break
             
-        if not pd.isna(ob_data["OB"].iloc[i]):
-            # Obtener información del Order Block
-            ob_type = ob_data["Type"].iloc[i] if "Type" in ob_data.columns else "Unknown"
-            ob_level = ob_data["Level"].iloc[i] if "Level" in ob_data.columns else 0
+        # Procesar Order Blocks alcistas
+        if ob_data["OB"].iloc[i] == 1:
+            # Asegurarse de que x1 no exceda el tamaño de la ventana
+            x1 = min(
+                int(ob_data["MitigatedIndex"].iloc[i]) if ob_data["MitigatedIndex"].iloc[i] != 0 else window_size - 1,
+                window_size - 1
+            )
             
-            # Determinar color basado en el tipo
-            if ob_type == "Bullish" or ob_type == "BULLISH":
-                color = "rgba(0, 255, 0, 0.3)"  # Verde para alcista
-                text_color = "lime"
-            elif ob_type == "Bearish" or ob_type == "BEARISH":
-                color = "rgba(255, 0, 0, 0.3)"  # Rojo para bajista
-                text_color = "red"
-            else:
-                color = "rgba(255, 255, 0, 0.3)"  # Amarillo para desconocido
-                text_color = "yellow"
-            
-            # Agregar rectángulo del Order Block
             fig.add_shape(
                 type="rect",
                 x0=df.index[i],
-                y0=ob_level - 0.0005,  # Altura del OB
-                x1=df.index[min(i + 5, window_size - 1)],  # Ancho del OB
-                y1=ob_level + 0.0005,
-                line=dict(width=1, color=text_color),
-                fillcolor=color,
-                opacity=0.5,
+                y0=ob_data["Bottom"].iloc[i],
+                x1=df.index[x1],
+                y1=ob_data["Top"].iloc[i],
+                line=dict(color="Purple"),
+                fillcolor="Purple",
+                opacity=0.2
+            )
+
+            # Calcular x_center asegurándose de no exceder los límites
+            if ob_data["MitigatedIndex"].iloc[i] > 0:
+                mid_point = min(int(i + (ob_data["MitigatedIndex"].iloc[i] - i) / 2), window_size - 1)
+            else:
+                mid_point = min(int(i + (window_size - i) / 2), window_size - 1)
+            x_center = df.index[mid_point]
+
+            y_center = (ob_data["Bottom"].iloc[i] + ob_data["Top"].iloc[i]) / 2
+            volume_text = format_volume(ob_data["OBVolume"].iloc[i])
+            annotation_text = f'OB: {volume_text} ({ob_data["Percentage"].iloc[i]}%)'
+
+            fig.add_annotation(
+                x=x_center,
+                y=y_center,
+                xref="x",
+                yref="y",
+                align="center",
+                text=annotation_text,
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False
+            )
+        
+        # Procesar Order Blocks bajistas
+        elif ob_data["OB"].iloc[i] == -1:
+            # Asegurarse de que x1 no exceda el tamaño de la ventana
+            x1 = min(
+                int(ob_data["MitigatedIndex"].iloc[i]) if ob_data["MitigatedIndex"].iloc[i] != 0 else window_size - 1,
+                window_size - 1
             )
             
-            # Agregar etiqueta
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[i]],
-                    y=[ob_level],
-                    mode="text",
-                    text="OB",
-                    textposition="middle center",
-                    textfont=dict(color=text_color, size=8, weight='bold'),
-                )
+            fig.add_shape(
+                type="rect",
+                x0=df.index[i],
+                y0=ob_data["Bottom"].iloc[i],
+                x1=df.index[x1],
+                y1=ob_data["Top"].iloc[i],
+                line=dict(color="Purple"),
+                fillcolor="Purple",
+                opacity=0.2
+            )
+
+            # Calcular x_center asegurándose de no exceder los límites
+            if ob_data["MitigatedIndex"].iloc[i] > 0:
+                mid_point = min(int(i + (ob_data["MitigatedIndex"].iloc[i] - i) / 2), window_size - 1)
+            else:
+                mid_point = min(int(i + (window_size - i) / 2), window_size - 1)
+            x_center = df.index[mid_point]
+
+            y_center = (ob_data["Bottom"].iloc[i] + ob_data["Top"].iloc[i]) / 2
+            volume_text = format_volume(ob_data["OBVolume"].iloc[i])
+            annotation_text = f'OB: {volume_text} ({ob_data["Percentage"].iloc[i]}%)'
+
+            fig.add_annotation(
+                x=x_center,
+                y=y_center,
+                xref="x",
+                yref="y",
+                align="center",
+                text=annotation_text,
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False
             )
     
     return fig
 
 def add_liquidity(fig, df, liquidity_data):
-    """Agregar niveles de liquidez al gráfico"""
+    """Agregar niveles de liquidez al gráfico - EXACTAMENTE como smart01.py"""
     if liquidity_data is None or liquidity_data.empty:
         return fig
         
@@ -276,39 +307,72 @@ def add_liquidity(fig, df, liquidity_data):
         if i >= window_size:
             break
             
+        # Procesar niveles de liquidez
         if not pd.isna(liquidity_data["Liquidity"].iloc[i]):
-            level = liquidity_data["Level"].iloc[i]
-            liquidity_type = liquidity_data["Type"].iloc[i] if "Type" in liquidity_data.columns else "Unknown"
+            end_idx = min(int(liquidity_data["End"].iloc[i]), window_size - 1)
             
-            # Determinar color basado en el tipo
-            if liquidity_type == "High" or liquidity_type == "HIGH":
-                color = "rgba(255, 0, 255, 0.8)"  # Magenta para alta liquidez
-                text = "LIQ+"
-            elif liquidity_type == "Low" or liquidity_type == "LOW":
-                color = "rgba(255, 165, 0, 0.8)"  # Naranja para baja liquidez
-                text = "LIQ-"
-            else:
-                color = "rgba(128, 128, 128, 0.8)"  # Gris para desconocido
-                text = "LIQ"
-            
-            # Agregar línea horizontal de liquidez
-            fig.add_hline(
-                y=level,
-                line_dash="dot",
-                line_color=color,
-                opacity=0.7,
-                line_width=2
-            )
-            
-            # Agregar etiqueta
             fig.add_trace(
                 go.Scatter(
-                    x=[df.index[i]],
-                    y=[level],
+                    x=[df.index[i], df.index[end_idx]],
+                    y=[liquidity_data["Level"].iloc[i], liquidity_data["Level"].iloc[i]],
+                    mode="lines",
+                    line=dict(
+                        color="rgba(255, 165, 0, 0.2)",
+                    ),
+                    showlegend=False
+                )
+            )
+            
+            mid_x = min(round((i + end_idx) / 2), window_size - 1)
+            fig.add_trace(
+                go.Scatter(
+                    x=[df.index[mid_x]],
+                    y=[liquidity_data["Level"].iloc[i]],
                     mode="text",
-                    text=text,
-                    textposition="middle right",
-                    textfont=dict(color=color, size=10, weight='bold'),
+                    text="Liquidity",
+                    textposition="top center" if liquidity_data["Liquidity"].iloc[i] == 1 else "bottom center",
+                    textfont=dict(color="rgba(255, 165, 0, 0.4)", size=8),
+                    showlegend=False
+                )
+            )
+        
+        # Procesar liquidez barrida
+        if not pd.isna(liquidity_data["Swept"].iloc[i]) and liquidity_data["Swept"].iloc[i] != 0:
+            end_idx = min(int(liquidity_data["End"].iloc[i]), window_size - 1)
+            swept_idx = min(int(liquidity_data["Swept"].iloc[i]), window_size - 1)
+            
+            # Determinar el nivel de precio para el punto barrido
+            swept_price = (
+                df["high"].iloc[swept_idx]
+                if liquidity_data["Liquidity"].iloc[i] == 1
+                else df["low"].iloc[swept_idx]
+            )
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=[df.index[end_idx], df.index[swept_idx]],
+                    y=[liquidity_data["Level"].iloc[i], swept_price],
+                    mode="lines",
+                    line=dict(
+                        color="rgba(255, 0, 0, 0.2)",
+                    ),
+                    showlegend=False
+                )
+            )
+            
+            # Calcular punto medio para la anotación
+            mid_x = min(round((end_idx + swept_idx) / 2), window_size - 1)
+            mid_y = (liquidity_data["Level"].iloc[i] + swept_price) / 2
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=[df.index[mid_x]],
+                    y=[mid_y],
+                    mode="text",
+                    text="Liquidity Swept",
+                    textposition="top center" if liquidity_data["Liquidity"].iloc[i] == 1 else "bottom center",
+                    textfont=dict(color="rgba(255, 0, 0, 0.4)", size=8),
+                    showlegend=False
                 )
             )
     
@@ -357,15 +421,119 @@ def add_trend_analysis(fig, df, trends_data):
 # FUNCIÓN PRINCIPAL PARA GENERAR GRÁFICOS COMPLETOS
 # ============================================================================
 
+
+
+def add_previous_high_low(fig, df, previous_high_low_data):
+    window_size = len(df)
+    
+    # Asegurarse de que previous_high_low_data use los mismos índices que df
+    previous_high_low_data = previous_high_low_data.reset_index(drop=True)
+    
+    # Obtener series de máximos y mínimos
+    high = previous_high_low_data["PreviousHigh"]
+    low = previous_high_low_data["PreviousLow"]
+
+    # Procesar máximos previos
+    high_levels = []
+    high_indexes = []
+    for i in range(len(high)):
+        if i >= window_size:
+            break
+        if (not pd.isna(high.iloc[i]) and 
+            high.iloc[i] != (high_levels[-1] if high_levels else None)):
+            high_levels.append(high.iloc[i])
+            high_indexes.append(i)
+
+    # Procesar mínimos previos
+    low_levels = [] 
+    low_indexes = []
+    for i in range(len(low)):
+        if i >= window_size:
+            break
+        if (not pd.isna(low.iloc[i]) and 
+            low.iloc[i] != (low_levels[-1] if low_levels else None)):
+            low_levels.append(low.iloc[i])
+            low_indexes.append(i)
+
+    # Dibujar líneas de máximos previos
+    for i in range(len(high_indexes)-1):
+        if high_indexes[i] >= window_size or high_indexes[i+1] >= window_size:
+            continue
+            
+        fig.add_trace(
+            go.Scatter(
+                x=[df.index[high_indexes[i]], df.index[high_indexes[i+1]]],
+                y=[high_levels[i], high_levels[i]],
+                mode="lines",
+                line=dict(
+                    color="rgba(255, 255, 255, 0.2)",
+                ),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[df.index[high_indexes[i+1]]],
+                y=[high_levels[i]],
+                mode="text",
+                text="PH",
+                textposition="top center",
+                textfont=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+            )
+        )
+
+    # Dibujar líneas de mínimos previos
+    for i in range(len(low_indexes)-1):
+        if low_indexes[i] >= window_size or low_indexes[i+1] >= window_size:
+            continue
+            
+        fig.add_trace(
+            go.Scatter(
+                x=[df.index[low_indexes[i]], df.index[low_indexes[i+1]]],
+                y=[low_levels[i], low_levels[i]],
+                mode="lines",
+                line=dict(
+                    color="rgba(255, 255, 255, 0.2)",
+                ),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[df.index[low_indexes[i+1]]],
+                y=[low_levels[i]],
+                mode="text",
+                text="PL",
+                textposition="bottom center",
+                textfont=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+            )
+        )
+
+    return fig
+
+
+
 def generate_smc_chart(
     df,
-    smc_data=None,
-    icc_signals=None,
-    signal_type="SMC",
-    title="EURUSD - Análisis SMC",
-    width=1200,
-    height=800,
-    save_path=None
+    macd_line,
+    signal_line,
+    histogram,
+    rsi,
+    current_trend,
+    current_trend_15m,
+    current_trend_1h,
+    current_trend_4h,
+   fvg_data,
+   swing_highs_lows_data,
+   bos_choch_data,
+   ob_data,
+   liquidity_data,
+   previous_high_low_data,
+   sessions,
+   retracements,
+   macd_line,
+   signal_line,
+   histogram,
+   rsi,
+   frame_filename
 ):
     """
     Genera un gráfico completo con indicadores SMC, MACD, RSI y señales ICC
@@ -398,26 +566,17 @@ def generate_smc_chart(
     if df is None or df.empty:
         raise ValueError("DataFrame no puede ser None o vacío")
     
-    # Calcular indicadores técnicos
-    if len(df) >= 26:
-        macd_line, signal_line, histogram = calculate_macd(df)
-        rsi = calculate_rsi(df)
-    else:
-        # Si no hay suficientes datos, crear indicadores básicos
-        macd_line = pd.Series([0] * len(df), index=df.index)
-        signal_line = pd.Series([0] * len(df), index=df.index)
-        histogram = pd.Series([0] * len(df), index=df.index)
-        rsi = pd.Series([50] * len(df), index=df.index)
-    
-    # Crear subplots: Candlesticks (67%), MACD (17%), RSI (16%)
+   
+     # Crear subplots: Candlesticks (67%), MACD (17%), RSI (16%)
     fig = sp.make_subplots(
         rows=3, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.08,
         row_heights=[0.67, 0.17, 0.16],
-        subplot_titles=(title, 'MACD', 'RSI')
+        subplot_titles=('', 'MACD', 'RSI')
     )
-    
+
+
     # 1. GRÁFICO PRINCIPAL - CANDLESTICKS
     fig.add_trace(
         go.Candlestick(
@@ -429,194 +588,200 @@ def generate_smc_chart(
             increasing_line_color="#77dd76",
             decreasing_line_color="#ff6962",
             name="EURUSD"
-        ),
-        row=1, col=1
+        )
     )
     
-    # 2. AGREGAR INDICADORES SMC SI ESTÁN DISPONIBLES
-    if smc_data:
-        print(f"   🔍 Agregando indicadores SMC al gráfico...")
-        print(f"   📊 Contenido de smc_data: {list(smc_data.keys())}")
-        
-        # Agregar Order Blocks
-        if 'order_blocks' in smc_data and smc_data['order_blocks'] is not None:
-            print(f"   📦 Order Blocks encontrados: {len(smc_data['order_blocks'])} filas")
-            if not smc_data['order_blocks'].empty:
-                print(f"   📦 Columnas de Order Blocks: {list(smc_data['order_blocks'].columns)}")
-                print(f"   📦 Primeras filas de Order Blocks:")
-                print(smc_data['order_blocks'].head(3))
-            fig = add_OB(fig, df, smc_data['order_blocks'])
-            print(f"   ✅ Order Blocks agregados")
-        else:
-            print(f"   ❌ No se encontraron Order Blocks en smc_data")
-        
-        # Agregar Fair Value Gaps
-        if 'fvg_data' in smc_data and smc_data['fvg_data'] is not None:
-            print(f"   🔶 Fair Value Gaps encontrados: {len(smc_data['fvg_data'])} filas")
-            fig = add_FVG(fig, df, smc_data['fvg_data'])
-            print(f"   ✅ Fair Value Gaps agregados")
-        else:
-            print(f"   ❌ No se encontraron Fair Value Gaps en smc_data")
-        
-        # Agregar Swing Highs/Lows
-        if 'swing_data' in smc_data and smc_data['swing_data'] is not None:
-            print(f"   📈 Swing Points encontrados: {len(smc_data['swing_data'])} filas")
-            fig = add_swing_highs_lows(fig, df, smc_data['swing_data'])
-            print(f"   ✅ Swing Highs/Lows agregados")
-        else:
-            print(f"   ❌ No se encontraron Swing Points en smc_data")
-        
-        # Agregar BOS/CHOCH
-        if 'bos_choch_data' in smc_data and smc_data['bos_choch_data'] is not None:
-            print(f"   🚀 BOS/CHOCH encontrados: {len(smc_data['bos_choch_data'])} filas")
-            fig = add_bos_choch(fig, df, smc_data['bos_choch_data'])
-            print(f"   ✅ BOS/CHOCH agregados")
-        else:
-            print(f"   ❌ No se encontraron BOS/CHOCH en smc_data")
-        
-        # Agregar Liquidez
-        if 'liquidity_data' in smc_data and smc_data['liquidity_data'] is not None:
-            print(f"   💧 Liquidez encontrada: {len(smc_data['liquidity_data'])} filas")
-            fig = add_liquidity(fig, df, smc_data['liquidity_data'])
-            print(f"   ✅ Liquidez agregada")
-        else:
-            print(f"   ❌ No se encontró Liquidez en smc_data")
-        
-        # Agregar análisis de tendencias
-        if 'trends' in smc_data and smc_data['trends'] is not None:
-            print(f"   📊 Tendencias encontradas: {smc_data['trends']}")
-            fig = add_trend_analysis(fig, df, smc_data['trends'])
-            print(f"   ✅ Análisis de tendencias agregado")
-        else:
-            print(f"   ❌ No se encontraron Tendencias en smc_data")
+      # Determinar el tipo de tendencia basado en el valor
+    if current_trend > 0.3:
+        trend_type_5m = "5M:ALCISTA"
+        trend_color_5m = "lime"
+    elif current_trend < -0.3:
+        trend_type_5m = "5M:BAJISTA"
+        trend_color_5m = "red"
     else:
-        print(f"   ❌ No se recibieron datos SMC (smc_data es None o vacío)")
+        trend_type_5m = "5M:LATERAL"
+        trend_color_5m = "gray"
+
+
+    # Determinar el tipo de tendencia de 15M
+    if current_trend_15m > 0.5:
+        trend_type_15m = "15M:ALCISTA"
+        trend_color_15m = "cyan"
+    elif current_trend_15m < -0.5:
+        trend_type_15m = "15M:BAJISTA"
+        trend_color_15m = "magenta"
+    else:
+        trend_type_15m = "15M:LATERAL"
+        trend_color_15m = "gray"
+
+    # Determinar el tipo de tendencia de 1H
+    if current_trend_1h > 0.5:
+        trend_type_1h = "1H:ALCISTA"
+        trend_color_1h = "blue"
+    elif current_trend_1h < -0.5:
+        trend_type_1h = "1H:BAJISTA"
+        trend_color_1h = "purple"
+    else:
+        trend_type_1h = "1H:LATERAL"
+        trend_color_1h = "gray"
+
+ # Determinar el tipo de tendencia de 4H
+    if current_trend_4h > 0.5:
+        trend_type_4h = "4H:ALCISTA"
+        trend_color_4h = "darkblue"
+    elif current_trend_4h < -0.5:
+        trend_type_4h = "4H:BAJISTA"
+        trend_color_4h = "darkred"
+    else:
+        trend_type_4h = "4H:LATERAL"
+        trend_color_4h = "gray"
+    # Agregar anotación de tendencia 5M en la parte inferior izquierda del gráfico
+    fig.add_annotation(
+        x=df.index[0],
+        y=df['low'].min(),
+        text=trend_type_5m,
+        showarrow=False,
+        font=dict(size=12, color=trend_color_5m, weight='bold'),
+        bgcolor="rgba(0,0,0,0.8)",
+        bordercolor=trend_color_5m,
+        borderwidth=1,
+        xanchor="left",
+        yanchor="bottom",
+        xshift=10,
+        yshift=-80
+    )
+
+    # NOTA: trend_type_15m puede ser actualizado con sufijo _ALCISTA/_BAJISTA
+    fig.add_annotation(
+        x=df.index[0],
+        y=df['low'].min(),
+        text=trend_type_15m,
+        showarrow=False,
+        font=dict(size=12, color=trend_color_15m, weight='bold'),
+        bgcolor="rgba(0,0,0,0.8)",
+        bordercolor=trend_color_15m,
+        borderwidth=1,
+        xanchor="left",
+        yanchor="bottom",
+        xshift=10,
+        yshift=-100
+    )
     
-    # 3. AGREGAR SEÑALES ICC SI ESTÁN DISPONIBLES
-    if icc_signals:
-        print(f"   🎯 Agregando señales ICC al gráfico...")
-        
-        for signal in icc_signals:
-            direction = signal.get('direction', 'UNKNOWN')
-            entry_price = signal.get('entry_price', 0)
-            risk_management = signal.get('risk_management', {})
-            stop_loss = risk_management.get('stop_loss', 0)
-            take_profit = risk_management.get('take_profit', 0)
-            
-            # Agregar punto de entrada
-            color = "green" if direction == "LONG" else "red"
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[-1]],
-                    y=[entry_price],
-                    mode="markers",
-                    marker=dict(
-                        symbol="diamond",
-                        size=12,
-                        color=color,
-                        line=dict(width=2, color="white")
-                    ),
-                    name=f"Entrada {direction}"
+
+    fig.add_annotation(
+                    x=df.index[0],
+                    y=df['low'].min(),
+                    text=trend_type_1h,
+                    showarrow=False,
+                    font=dict(size=12, color=trend_color_1h, weight='bold'),
+                    bgcolor="rgba(0,0,0,0.8)",
+                    bordercolor=trend_color_1h,
+                    borderwidth=1,
+                    xanchor="left",
+                    yanchor="bottom",
+                    xshift=10,
+                    yshift=-120
                 )
-            )
-            
-            # Agregar Stop Loss
-            if stop_loss > 0:
-                fig.add_hline(
-                    y=stop_loss,
-                    line_dash="dash",
-                    line_color="red",
-                    opacity=0.8,
-                    line_width=2,
-                    annotation_text="Stop Loss"
+
+
+    fig.add_annotation(
+                    x=df.index[0],
+                    y=df['low'].min(),
+                    text=trend_type_4h,
+                    showarrow=False,
+                    font=dict(size=12, color=trend_color_4h, weight='bold'),
+                    bgcolor="rgba(0,0,0,0.8)",
+                    bordercolor=trend_color_4h,
+                    borderwidth=1,
+                    xanchor="left",
+                    yanchor="bottom",
+                    xshift=10,
+                    yshift=-140
                 )
-            
-            # Agregar Take Profit
-            if take_profit > 0:
-                fig.add_hline(
-                    y=take_profit,
-                    line_dash="dash",
-                    line_color="green",
-                    opacity=0.8,
-                    line_width=2,
-                    annotation_text="Take Profit"
-                )
-        
-        print(f"   ✅ Señales ICC agregadas al gráfico")
-    
-    # 4. AGREGAR MACD
+
+    add_FVG(fig, df, fvg_data)
+    add_swing_highs_lows(fig, df, swing_highs_lows_data)
+    add_bos_choch(fig, df, bos_choch_data)
+    add_OB(fig,df, ob_data)
+    add_liquidity(fig,df, liquidity_data)
+    add_previous_high_low(fig,df, previous_high_low_data)
+    add_sessions(fig,df, sessions)
+    add_retracements(fig,df, retracements)
+
+        # 2. GRÁFICO MACD
     fig.add_trace(
         go.Scatter(
             x=df.index,
             y=macd_line,
-            mode="lines",
-            line=dict(color="blue", width=2),
-            name="MACD Line"
-        ),
-        row=2, col=1
+            mode='lines',
+            name='MACD',
+            line=dict(color='teal', width=1),
+            showlegend=False
+        ),row=2, col=1
     )
-    
+      
     fig.add_trace(
         go.Scatter(
             x=df.index,
             y=signal_line,
-            mode="lines",
-            line=dict(color="red", width=2),
-            name="Signal Line"
+            mode='lines',
+            name='Signal',
+            line=dict(color='orange', width=1),
+            showlegend=False
         ),
         row=2, col=1
     )
-    
+
+     # Histograma MACD
+    colors = ['green' if val >= 0 else 'red' for val in histogram]
     fig.add_trace(
         go.Bar(
             x=df.index,
             y=histogram,
-            name="Histogram",
-            marker_color="gray",
-            opacity=0.6
+            name='Histogram',
+            marker_color=colors,
+            showlegend=False
         ),
         row=2, col=1
     )
+
+    # Línea cero en MACD
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", row=2, col=1)
     
-    # 5. AGREGAR RSI
+    # 3. GRÁFICO RSI
     fig.add_trace(
         go.Scatter(
             x=df.index,
             y=rsi,
-            mode="lines",
-            line=dict(color="purple", width=2),
-            name="RSI"
+            mode='lines',
+            name='RSI',
+            line=dict(color='yellow', width=2),
+            showlegend=False
         ),
         row=3, col=1
     )
     
-    # Agregar líneas de referencia RSI
-    fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=3, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=3, col=1)
-    fig.add_hline(y=50, line_dash="dash", line_color="gray", opacity=0.3, row=3, col=1)
-    
-    # 6. CONFIGURAR LAYOUT
+    # Líneas de referencia RSI
+    fig.add_hline(y=50, line_dash="solid", line_color="gray", row=3, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="red", row=3, col=1)
+
+    # Configurar layout
     fig.update_layout(
-        title=title,
-        xaxis_title="Fecha/Hora",
-        yaxis_title="Precio",
-        template="plotly_dark",
-        width=width,
-        height=height,
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        xaxis_rangeslider_visible=False,
+        showlegend=False,
+        margin=dict(l=0, r=0, b=50, t=0),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(12, 14, 18, 1)",
+        font=dict(color="white"),
+        width=800,
+        height=600  # Altura para 3 subplots
     )
     
-    # 7. CONFIGURAR EJES
-    # Ejes principales
+    # Configurar ejes
     fig.update_xaxes(
-        title_text="",
+        visible=True, 
+        showticklabels=True, 
         row=1, col=1,
         tickformat="%d/%m %H:%M",
         tickangle=45,
@@ -624,11 +789,11 @@ def generate_smc_chart(
         tickmode='auto',
         nticks=8
     )
-    fig.update_yaxes(title_text="Precio", row=1, col=1)
+    fig.update_yaxes(visible=False, showticklabels=False, row=1, col=1)
     
-    # Ejes MACD
+    # Configurar ejes MACD
     fig.update_xaxes(
-        title_text="",
+        title_text="", 
         row=2, col=1,
         tickformat="%d/%m %H:%M",
         tickangle=45,
@@ -638,9 +803,9 @@ def generate_smc_chart(
     )
     fig.update_yaxes(title_text="MACD", row=2, col=1)
     
-    # Ejes RSI
+    # Configurar ejes RSI
     fig.update_xaxes(
-        title_text="",
+        title_text="", 
         row=3, col=1,
         tickformat="%d/%m %H:%M",
         tickangle=45,
@@ -649,24 +814,81 @@ def generate_smc_chart(
         nticks=6
     )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
-    
-    # 8. GUARDAR IMAGEN SI SE ESPECIFICA
-    if save_path:
-        try:
-            # Crear directorio si no existe
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            
-            # Guardar imagen
-            fig.write_image(save_path, width=width, height=height)
-            print(f"   ✅ Imagen guardada exitosamente: {save_path}")
-        except Exception as e:
-            print(f"   ❌ Error guardando imagen: {e}")
-    
-    return fig
+    fig.write_image(frame_filename, width=800, height=600)
+
 
 # ============================================================================
 # FUNCIÓN DE CONVENIENCIA PARA GENERAR IMÁGENES ICC
 # ============================================================================
+
+def add_sessions(fig, df, sessions):
+    window_size = len(df)
+    
+    # Asegurarse de que sessions use los mismos índices que df
+    sessions = sessions.reset_index(drop=True)
+    
+    for i in range(len(sessions) - 1):
+        if i >= window_size - 1:  # -1 porque necesitamos i+1 para el x1
+            break
+            
+        if sessions["Active"].iloc[i] == 1:
+            fig.add_shape(
+                type="rect",
+                x0=df.index[i],
+                y0=sessions["Low"].iloc[i],
+                x1=df.index[i + 1],
+                y1=sessions["High"].iloc[i],
+                line=dict(width=0),
+                fillcolor="#16866E",
+                opacity=0.2,
+            )
+    return fig
+
+
+def add_retracements(fig, df, retracements):
+    window_size = len(df)
+    
+    # Asegurarse de que retracements use los mismos índices que df
+    retracements = retracements.reset_index(drop=True)
+    
+    for i in range(len(retracements)):
+        if i >= window_size:
+            break
+            
+        next_direction = (
+            retracements["Direction"].iloc[i + 1]
+            if i < len(retracements) - 1
+            else 0
+        )
+        current_direction = retracements["Direction"].iloc[i]
+        
+        # Verificar condiciones para mostrar el retroceso
+        if (
+            (next_direction != current_direction or i == len(retracements) - 1) and
+            current_direction != 0 and
+            (next_direction if i < len(retracements) - 1 else current_direction) != 0
+        ):
+            # Determinar la posición Y basada en la dirección
+            y_position = (
+                df["high"].iloc[i]
+                if current_direction == -1
+                else df["low"].iloc[i]
+            )
+            
+            # Agregar anotación con porcentajes de retroceso
+            fig.add_annotation(
+                x=df.index[i],
+                y=y_position,
+                xref="x",
+                yref="y",
+                text=(
+                    f"C:{retracements['CurrentRetracement%'].iloc[i]}%<br>"
+                    f"D:{retracements['DeepestRetracement%'].iloc[i]}%"
+                ),
+                font=dict(color="rgba(255, 255, 255, 0.4)", size=8),
+                showarrow=False,
+            )
+    return fig
 
 def generate_icc_image(
     data_buffer,
