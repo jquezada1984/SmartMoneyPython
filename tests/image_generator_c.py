@@ -521,19 +521,15 @@ def generate_smc_chart(
     current_trend_15m,
     current_trend_1h,
     current_trend_4h,
-   fvg_data,
-   swing_highs_lows_data,
-   bos_choch_data,
-   ob_data,
-   liquidity_data,
-   previous_high_low_data,
-   sessions,
-   retracements,
-   macd_line,
-   signal_line,
-   histogram,
-   rsi,
-   frame_filename
+    fvg_data,
+    swing_highs_lows_data,
+    bos_choch_data,
+    ob_data,
+    liquidity_data,
+    previous_high_low_data,
+    sessions,
+    retracements,
+    frame_filename
 ):
     """
     Genera un gráfico completo con indicadores SMC, MACD, RSI y señales ICC

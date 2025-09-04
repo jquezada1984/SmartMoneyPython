@@ -14,6 +14,10 @@ import datetime
 # Importar paquetes asumiendo ejecución como módulo (python -m tests.smart01)
 from smartmoneyconcepts.smc import smc
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from image_generator_c import generate_smc_chart
 
 
 
@@ -594,7 +598,14 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     # Agregar indicador de tendencia de 5M directamente en el gráfico de velas
     current_trend = trend_data['trend'].iloc[-1] if len(trend_data) > 0 else 0
     
-   
+    # Inicializar variables de tendencia para múltiples timeframes
+    trend_type_15m = "15M:NA"
+    trend_type_1h = "1H:NA"
+    trend_type_4h = "4H:NA"
+    current_trend_15m = 0
+    current_trend_1h = 0
+    current_trend_4h = 0
+    
     # Agregar indicador de tendencia de 15M en la parte inferior derecha del gráfico
     # Calcular tendencia de 15M basada en los datos agregados
     try:
@@ -773,7 +784,8 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         'BOS': [1 if i % 25 == 0 else np.nan for i in range(len(window_df))],
         'CHOCH': [1 if i % 25 == 12 else np.nan for i in range(len(window_df))],
         'Level': bos_choch_levels,
-        'BrokenIndex': [i + 8 if i % 25 == 0 or i % 25 == 12 else 0 for i in range(len(window_df))]
+        'BrokenIndex': [i + 8 if i % 25 == 0 or i % 25 == 12 else 0 for i in range(len(window_df))],
+        'ChoCHIndex': [i + 8 if i % 25 == 12 else 0 for i in range(len(window_df))]
     }, index=window_df.index)
     
     ob_data = pd.DataFrame({
@@ -876,7 +888,26 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     # Guardar frame como PNG
     try:
         
-        generate_smc_chart(window_df, fvg_data, swing_highs_lows_data, bos_choch_data, ob_data, liquidity_data, previous_high_low_data, sessions, retracements, macd_line, signal_line, histogram, rsi, frame_filename)
+        generate_smc_chart(
+            window_df,
+            macd_line,
+            signal_line,
+            histogram,
+            rsi,
+            current_trend,
+            current_trend_15m,
+            current_trend_1h,
+            current_trend_4h,
+            fvg_data,
+            swing_highs_lows_data,
+            bos_choch_data,
+            ob_data,
+            liquidity_data,
+            previous_high_low_data,
+            sessions,
+            retracements,
+            frame_filename
+        )
         # Mostrar información consolidada del frame
         current_trend = trend_data['trend'].iloc[-1] if len(trend_data) > 0 else 0
         print(f"✅ Frame {pos} guardado: {frame_filename}")
