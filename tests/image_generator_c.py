@@ -25,6 +25,70 @@ import numpy as np
 from datetime import datetime
 import os
 
+# ============================================================================
+# FUNCIONES PARA CALCULAR INDICADORES TÉCNICOS
+# ============================================================================
+
+def calculate_macd(df, fast_period=12, slow_period=26, signal_period=9):
+    """
+    Calcular MACD (Moving Average Convergence Divergence)
+    
+    Parámetros:
+    -----------
+    df : DataFrame
+        DataFrame con datos OHLCV
+    fast_period : int
+        Período para la media móvil rápida
+    slow_period : int
+        Período para la media móvil lenta
+    signal_period : int
+        Período para la línea de señal
+    
+    Retorna:
+    --------
+    tuple
+        (macd_line, signal_line, histogram)
+    """
+    close = df['close']
+    
+    # Calcular medias móviles exponenciales
+    ema_fast = close.ewm(span=fast_period).mean()
+    ema_slow = close.ewm(span=slow_period).mean()
+    
+    # Calcular MACD
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal_period).mean()
+    histogram = macd_line - signal_line
+    
+    return macd_line, signal_line, histogram
+
+def calculate_rsi(df, period=14):
+    """
+    Calcular RSI (Relative Strength Index)
+    
+    Parámetros:
+    -----------
+    df : DataFrame
+        DataFrame con datos OHLCV
+    period : int
+        Período para el cálculo del RSI
+    
+    Retorna:
+    --------
+    pandas.Series
+        Serie con valores de RSI
+    """
+    close = df['close']
+    delta = close.diff()
+    
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
+
 
 
 
@@ -426,6 +490,10 @@ def add_trend_analysis(fig, df, trends_data):
 def add_previous_high_low(fig, df, previous_high_low_data):
     window_size = len(df)
     
+    # Verificar si el DataFrame está vacío o no tiene las columnas necesarias
+    if previous_high_low_data.empty or 'PreviousHigh' not in previous_high_low_data.columns or 'PreviousLow' not in previous_high_low_data.columns:
+        return fig  # Retornar sin agregar nada si no hay datos
+    
     # Asegurarse de que previous_high_low_data use los mismos índices que df
     previous_high_low_data = previous_high_low_data.reset_index(drop=True)
     
@@ -810,7 +878,23 @@ def generate_smc_chart(
         nticks=6
     )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
-    fig.write_image(frame_filename, width=800, height=600)
+    
+    # Intentar guardar la imagen con manejo de errores de Kaleido
+    try:
+        fig.write_image(frame_filename, width=800, height=600)
+        print(f"   ✅ Imagen guardada exitosamente: {frame_filename}")
+    except Exception as kaleido_error:
+        print(f"   ⚠️ Error de Kaleido al guardar imagen: {kaleido_error}")
+        print(f"   🔄 Intentando método alternativo...")
+        
+        # Método alternativo: guardar como HTML
+        try:
+            html_filename = frame_filename.replace('.png', '.html')
+            fig.write_html(html_filename)
+            print(f"   ✅ Imagen guardada como HTML: {html_filename}")
+        except Exception as html_error:
+            print(f"   ❌ Error guardando como HTML: {html_error}")
+            print(f"   💡 Sugerencia: Instalar/actualizar kaleido: pip install -U kaleido")
 
 
 # ============================================================================
@@ -819,6 +903,10 @@ def generate_smc_chart(
 
 def add_sessions(fig, df, sessions):
     window_size = len(df)
+    
+    # Verificar si el DataFrame está vacío o no tiene las columnas necesarias
+    if sessions.empty or 'Active' not in sessions.columns or 'Low' not in sessions.columns or 'High' not in sessions.columns:
+        return fig  # Retornar sin agregar nada si no hay datos
     
     # Asegurarse de que sessions use los mismos índices que df
     sessions = sessions.reset_index(drop=True)
@@ -843,6 +931,10 @@ def add_sessions(fig, df, sessions):
 
 def add_retracements(fig, df, retracements):
     window_size = len(df)
+    
+    # Verificar si el DataFrame está vacío o no tiene las columnas necesarias
+    if retracements.empty or 'Direction' not in retracements.columns:
+        return fig  # Retornar sin agregar nada si no hay datos
     
     # Asegurarse de que retracements use los mismos índices que df
     retracements = retracements.reset_index(drop=True)
@@ -926,25 +1018,95 @@ def generate_icc_image(
         filename = f"ICC_Signal_{timestamp}_{direction}.png"
         save_path = os.path.join(save_dir, filename)
         
-        # Generar título del gráfico
-        title = f"EURUSD - Señal {signal_type} con SMC Real + TP Estructural"
+        # Calcular indicadores técnicos
+        macd_line, signal_line, histogram = calculate_macd(df)
+        rsi = calculate_rsi(df)
         
-        # Generar gráfico
+        # Extraer datos SMC del diccionario
+        if smc_data:
+            print(f"   🔍 Extrayendo datos SMC para visualización...")
+            print(f"   📊 Contenido de smc_data: {list(smc_data.keys())}")
+            
+            # Extraer datos individuales
+            fvg_data = smc_data.get('fvg_data', pd.DataFrame())
+            swing_highs_lows_data = smc_data.get('swing_data', pd.DataFrame())
+            bos_choch_data = smc_data.get('bos_choch_data', pd.DataFrame())
+            ob_data = smc_data.get('order_blocks', pd.DataFrame())
+            liquidity_data = pd.DataFrame()  # No disponible en smc_data actual
+            previous_high_low_data = pd.DataFrame()  # No disponible en smc_data actual
+            
+            # Extraer tendencias y convertir a valores numéricos
+            trends = smc_data.get('trends', {})
+            
+            # Función para convertir string de tendencia a número
+            def trend_to_number(trend_str):
+                if trend_str == 'ALCISTA':
+                    return 1.0
+                elif trend_str == 'BAJISTA':
+                    return -1.0
+                elif trend_str == 'LATERAL':
+                    return 0.0
+                else:
+                    return 0.0  # Default para 'N/A' o valores desconocidos
+            
+            current_trend = trend_to_number(trends.get('overall_bias', 'N/A'))
+            current_trend_15m = 0.0  # No disponible en smc_data actual
+            current_trend_1h = trend_to_number(trends.get('h1_trend', 'N/A'))
+            current_trend_4h = trend_to_number(trends.get('h4_trend', 'N/A'))
+            
+            print(f"   📊 Datos SMC extraídos para visualización:")
+            print(f"      • Order Blocks: {len(ob_data) if not ob_data.empty else 0}")
+            print(f"      • Fair Value Gaps: {len(fvg_data) if not fvg_data.empty else 0}")
+            print(f"      • Swing Points: {len(swing_highs_lows_data) if not swing_highs_lows_data.empty else 0}")
+            print(f"      • BOS/CHOCH: {len(bos_choch_data) if not bos_choch_data.empty else 0}")
+            print(f"      • Tendencias H1: {current_trend_1h}")
+            print(f"      • Tendencias H4: {current_trend_4h}")
+        else:
+            print(f"   ❌ No se recibieron datos SMC")
+            # Datos vacíos por defecto
+            fvg_data = pd.DataFrame()
+            swing_highs_lows_data = pd.DataFrame()
+            bos_choch_data = pd.DataFrame()
+            ob_data = pd.DataFrame()
+            liquidity_data = pd.DataFrame()
+            previous_high_low_data = pd.DataFrame()
+            current_trend = 0.0  # LATERAL
+            current_trend_15m = 0.0  # LATERAL
+            current_trend_1h = 0.0  # LATERAL
+            current_trend_4h = 0.0  # LATERAL
+        
+        # Datos adicionales requeridos por generate_smc_chart
+        sessions = pd.DataFrame()  # No disponible
+        retracements = pd.DataFrame()  # No disponible
+        
+        # Generar gráfico usando la función original
         fig = generate_smc_chart(
             df=df,
-            smc_data=smc_data,
-            icc_signals=icc_signals,
-            signal_type=signal_type,
-            title=title,
-            width=1200,
-            height=800,
-            save_path=save_path
+            macd_line=macd_line,
+            signal_line=signal_line,
+            histogram=histogram,
+            rsi=rsi,
+            current_trend=current_trend,
+            current_trend_15m=current_trend_15m,
+            current_trend_1h=current_trend_1h,
+            current_trend_4h=current_trend_4h,
+            fvg_data=fvg_data,
+            swing_highs_lows_data=swing_highs_lows_data,
+            bos_choch_data=bos_choch_data,
+            ob_data=ob_data,
+            liquidity_data=liquidity_data,
+            previous_high_low_data=previous_high_low_data,
+            sessions=sessions,
+            retracements=retracements,
+            frame_filename=save_path
         )
         
         return filename
         
     except Exception as e:
         print(f"   ❌ Error generando imagen ICC: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # ============================================================================
