@@ -32,19 +32,8 @@ except ImportError as e:
 # Importar la librería de análisis de mercado
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 
-# Importar el generador de imágenes SMC (basado en smart01.py)
-try:
-    from image_generator_c import generate_signal_image, generate_smc_chart
-    print("✅ Generador de imágenes importado exitosamente")
-except ImportError:
-    try:
-        # Si no se puede importar directamente, usar import relativo
-        from .image_generator_c import generate_signal_image, generate_smc_chart
-        print("✅ Generador de imágenes importado exitosamente (relativo)")
-    except ImportError as e:
-        print(f"❌ Error importando generador de imágenes: {e}")
-        generate_signal_image = None
-        generate_smc_chart = None
+# Generación de imágenes deshabilitada
+print("📊 Modo de visualización: Solo texto (sin generación de imágenes)")
 
 class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
@@ -106,11 +95,9 @@ class ICCStrategy(bt.Strategy):
         
         print(f"🚀 Estrategia ICC SmartMoney inicializada")
         print(f"   🎯 Mínimo R:R requerido: 1:1")
-        print(f"   🎨 Generación de imágenes automática: ACTIVADA")
-        print(f"      • Imagen al detectar señal ICC")
-        print(f"      • Imagen al ejecutar orden")
-        print(f"      • Imagen al cerrar trade")
-        print(f"      • Imagen al cierre manual del backtesting")
+        print(f"   📊 Modo de visualización: Solo texto")
+        print(f"      • Mostrar puntos de entrada, profit y loss")
+        print(f"      • Sin generación de imágenes")
         
     def log(self, txt, dt=None):
         """Función de logging"""
@@ -250,144 +237,25 @@ class ICCStrategy(bt.Strategy):
                             'structural_levels': structural_levels
                         }
                         
-                        # GENERAR IMAGEN DE LA SEÑAL ICC
-                        print(f"   🎨 Generando imagen de señal ICC...")
-                        try:
-                            # Obtener datos SMC reales de la estrategia ICC para mostrarlos en la imagen
-                            smc_data = self.smartmoney_icc.get_smc_data(df_5m, df_1h_filtered, df_4h_filtered)
-                            
-                            # Debug: Verificar qué datos SMC se obtuvieron
-                            print(f"   🔍 Datos SMC obtenidos de la estrategia:")
-                            if smc_data:
-                                print(f"      • Order Blocks: {len(smc_data.get('order_blocks', pd.DataFrame())) if not smc_data.get('order_blocks', pd.DataFrame()).empty else 0}")
-                                print(f"      • Fair Value Gaps: {len(smc_data.get('fvg_data', pd.DataFrame())) if not smc_data.get('fvg_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • Swing Points: {len(smc_data.get('swing_data', pd.DataFrame())) if not smc_data.get('swing_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • BOS/CHOCH: {len(smc_data.get('bos_choch_data', pd.DataFrame())) if not smc_data.get('bos_choch_data', pd.DataFrame()).empty else 0}")
-                                print(f"      • Tendencias: {smc_data.get('trends', {})}")
-                            else:
-                                print(f"      ❌ No se obtuvieron datos SMC")
-                            
-                            # Usar los últimos 100 datos actuales para calcular indicadores (como en smart01)
-                            analysis_df = df_5m.tail(100)  # Últimos 100 datos actuales
-                            macd_line, signal_line, histogram = self.calculate_macd(analysis_df)
-                            rsi = self.calculate_rsi(analysis_df)
-
-                            current_trend_15m = 0
-                            current_trend_1h = 0
-                            current_trend_4h = 0
-
-                            # Crear DataFrames de timeframes superiores a partir de df_5m
-                            print("   📊 Creando timeframes superiores desde datos 5M...")
-                            
-                            # Resample a 1H (12 velas de 5M = 1H)
-                            current_df_1h = df_5m.resample('1H').agg({
-                                'open': 'first',
-                                'high': 'max',
-                                'low': 'min',
-                                'close': 'last',
-                                'volume': 'sum'
-                            }).dropna()
-                            
-                            # Resample a 4H (48 velas de 5M = 4H)
-                            current_df_4h = df_5m.resample('4H').agg({
-                                'open': 'first',
-                                'high': 'max',
-                                'low': 'min',
-                                'close': 'last',
-                                'volume': 'sum'
-                            }).dropna()
-                            
-                            print(f"   ✅ Timeframes creados: 1H={len(current_df_1h)} velas, 4H={len(current_df_4h)} velas")
-
-                            trend_result_15m = self.market_analysis.detect_trend(df_5m, method='structural')
-                            current_trend_15m = trend_result_15m['trend'].iloc[-1]
-
-                            trend_result_1h = self.market_analysis.detect_trend(current_df_1h, method='structural')
-                            current_trend_1h = trend_result_1h['trend'].iloc[-1]
-
-                            trend_result_4h = self.market_analysis.detect_trend(current_df_4h, method='structural')
-                            current_trend_4h = trend_result_4h['trend'].iloc[-1]
-
-                            # Extraer todos los datos SMC del diccionario
-                            fvg_data = smc_data.get('fvg_data', pd.DataFrame())
-                            swing_highs_lows_data = smc_data.get('swing_data', pd.DataFrame())
-                            bos_choch_data = smc_data.get('bos_choch_data', pd.DataFrame())
-                            ob_data = smc_data.get('order_blocks', pd.DataFrame())
-                            
-                            # Debug: Verificar datos SMC antes de enviar a generate_smc_chart
-                            print(f"   🔍 Debug datos SMC para visualización:")
-                            print(f"      • FVG data shape: {fvg_data.shape if not fvg_data.empty else 'Empty'}")
-                            print(f"      • Swing data shape: {swing_highs_lows_data.shape if not swing_highs_lows_data.empty else 'Empty'}")
-                            print(f"      • BOS/CHOCH data shape: {bos_choch_data.shape if not bos_choch_data.empty else 'Empty'}")
-                            print(f"      • Order Blocks data shape: {ob_data.shape if not ob_data.empty else 'Empty'}")
-                            
-                            # Verificar si hay datos SMC válidos
-                            if not fvg_data.empty:
-                                print(f"      • FVG columns: {list(fvg_data.columns)}")
-                                print(f"      • FVG sample: {fvg_data.head(2).to_dict() if len(fvg_data) > 0 else 'No data'}")
-                            if not bos_choch_data.empty:
-                                print(f"      • BOS/CHOCH columns: {list(bos_choch_data.columns)}")
-                                print(f"      • BOS/CHOCH sample: {bos_choch_data.head(2).to_dict() if len(bos_choch_data) > 0 else 'No data'}")
-                            
-                            # Crear datos vacíos para indicadores adicionales (mantener compatibilidad)
-                            liquidity_data = pd.DataFrame()
-                            previous_high_low_data = pd.DataFrame()
-                            sessions = pd.DataFrame()
-                            retracements = pd.DataFrame()
-
-                            # Crear save_path con información de la operación
-                            current_time = datetime.now()
-                            direction = signal.get('direction', 'UNKNOWN')
-                            entry_price = signal.get('entry_price', 0)
-                            
-                            # Asegurar que el directorio frames_png existe
-                            os.makedirs("frames_png", exist_ok=True)
-                            
-                            # Formato: frames_png/ICC_Signal_YYYYMMDD_HHMMSS_DIRECTION_ENTRYPRICE.png
-                            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-                            save_path = f"frames_png/ICC_Signal_{timestamp}_{direction}_{entry_price:.5f}.png"
-                            
-                            print(f"   💾 Guardando imagen en: {save_path}")
-                            
-                            # Debug: Verificar data_buffer
-                            print(f"   🔍 Debug data_buffer:")
-                            print(f"      • data_buffer type: {type(self.data_buffer)}")
-                            print(f"      • data_buffer length: {len(self.data_buffer) if hasattr(self.data_buffer, '__len__') else 'No length'}")
-                            if hasattr(self.data_buffer, 'columns'):
-                                print(f"      • data_buffer columns: {list(self.data_buffer.columns)}")
-                            if hasattr(self.data_buffer, 'index'):
-                                print(f"      • data_buffer index type: {type(self.data_buffer.index)}")
-
-                            # Generar imagen con los datos actuales, la señal detectada y los datos SMC reales
-                            generate_smc_chart(
-                                df=analysis_df,  # DataFrame ya tiene formato correcto
-                                macd_line=macd_line.tail(len(analysis_df)),
-                                signal_line=signal_line.tail(len(analysis_df)),
-                                histogram=histogram.tail(len(analysis_df)),
-                                rsi=rsi.tail(len(analysis_df)),
-                                current_trend=current_trend_15m,  # Usar valor numérico, no DataFrame
-                                current_trend_15m=current_trend_15m,
-                                current_trend_1h=current_trend_1h,
-                                current_trend_4h=current_trend_4h,
-                                fvg_data=fvg_data,
-                                swing_highs_lows_data=swing_highs_lows_data,
-                                bos_choch_data=bos_choch_data,
-                                ob_data=ob_data,
-                                liquidity_data=liquidity_data,
-                                previous_high_low_data=previous_high_low_data,
-                                sessions=sessions,
-                                retracements=retracements,
-                                frame_filename=save_path
-                            )
-                            
-                            # Verificar si el archivo se creó exitosamente
-                            if os.path.exists(save_path):
-                                print(f"   🖼️ Imagen de señal ICC generada exitosamente: {save_path}")
-                            else:
-                                print(f"   ⚠️ No se pudo generar la imagen de la señal ICC")
-                        except Exception as e:
-                            print(f"   ❌ Error generando imagen de señal ICC: {e}")
+                        # MOSTRAR INFORMACIÓN DETALLADA DE LA SEÑAL ICC
+                        print(f"   📊 INFORMACIÓN DETALLADA DE LA SEÑAL ICC:")
+                        print(f"   " + "="*60)
+                        print(f"   🎯 DIRECCIÓN: {direction}")
+                        print(f"   💰 PUNTO DE ENTRADA: {entry_price:.5f}")
+                        print(f"   🛑 STOP LOSS: {stop_loss:.5f}")
+                        print(f"   🎯 TAKE PROFIT: {take_profit:.5f}")
+                        print(f"   📊 RIESGO/BENEFICIO: 1:{risk_reward_ratio:.2f}")
+                        print(f"   🔍 FUENTE: {signal.get('source', 'ICC')}")
+                        print(f"   📅 FECHA/HORA: {self.data.datetime.datetime(0)}")
+                        print(f"   " + "="*60)
                         
+                        # Mostrar niveles estructurales si están disponibles
+                        if structural_levels:
+                            print(f"   📊 NIVELES ESTRUCTURALES:")
+                            for i, level in enumerate(structural_levels, 1):
+                                print(f"      {i}. {level}")
+                        print(f"   " + "="*60)
+                                                
                         # Ejecutar orden según dirección
                         print(f"   🚀 EJECUTANDO ORDEN: {direction}")
                         if direction == 'LONG':
@@ -468,37 +336,17 @@ class ICCStrategy(bt.Strategy):
             print(f"   📊 Cantidad: {order.executed.size}")
             print(f"   💸 Comisión: {order.executed.comm:.2f}")
             
-            # GENERAR IMAGEN DE CONFIRMACIÓN DE ORDEN EJECUTADA
+            # MOSTRAR CONFIRMACIÓN DE ORDEN EJECUTADA
             if self.current_position_info:
-                print(f"   🎨 Generando imagen de confirmación de orden ejecutada...")
-                try:
-                    # Crear señal de confirmación con el precio real de ejecución
-                    confirmation_signal = [{
-                        'direction': self.current_position_info['direction'],
-                        'entry_price': order.executed.price,  # Precio real de ejecución
-                        'risk_management': {
-                            'stop_loss': self.current_position_info['stop_loss'],
-                            'take_profit': self.current_position_info['take_profit']
-                        }
-                    }]
-                    
-                    # Obtener datos SMC para la imagen de confirmación
-                    smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-                    
-                    # Generar imagen de confirmación con datos SMC
-                    confirmation_image = generate_signal_image(
-                        data_buffer=self.data_buffer,
-                        icc_signals=confirmation_signal,
-                        smc_data=smc_data,  # Pasar datos SMC reales
-                        signal_type="CONFIRMACION"
-                    )
-                    
-                    if confirmation_image:
-                        print(f"   🖼️ Imagen de confirmación generada: {confirmation_image}")
-                    else:
-                        print(f"   ⚠️ No se pudo generar la imagen de confirmación")
-                except Exception as e:
-                    print(f"   ❌ Error generando imagen de confirmación: {e}")
+                print(f"   ✅ CONFIRMACIÓN DE ORDEN EJECUTADA:")
+                print(f"   " + "="*50)
+                print(f"   🎯 DIRECCIÓN: {self.current_position_info['direction']}")
+                print(f"   💰 PRECIO DE ENTRADA REAL: {order.executed.price:.5f}")
+                print(f"   🛑 STOP LOSS: {self.current_position_info['stop_loss']:.5f}")
+                print(f"   🎯 TAKE PROFIT: {self.current_position_info['take_profit']:.5f}")
+                print(f"   📊 RIESGO/BENEFICIO: 1:{self.current_position_info['risk_reward_ratio']:.2f}")
+                print(f"   📅 FECHA/HORA EJECUCIÓN: {self.data.datetime.datetime(0)}")
+                print(f"   " + "="*50)
             
             if order.isbuy():
                 # Mostrar información de gestión de riesgo para compras
@@ -571,36 +419,17 @@ class ICCStrategy(bt.Strategy):
         result = "GANADORA" if pnlcomm > 0 else "PERDEDORA"
         self.log(f'📊 TRADE CERRADO - {close_type} - {result} - P&L: {pnlcomm:.2f}')
         
-        # GENERAR IMAGEN DE CIERRE DE TRADE
-        print(f"   🎨 Generando imagen de cierre de trade...")
-        try:
-            # Crear señal de cierre con información del trade
-            close_signal = [{
-                'direction': direction,
-                'entry_price': trade.price,
-                'risk_management': {
-                    'stop_loss': 0,  # No aplica para cierre
-                    'take_profit': current_price  # Precio de cierre
-                }
-            }]
-            
-            # Obtener datos SMC para la imagen de cierre
-            smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-            
-            # Generar imagen de cierre con datos SMC
-            close_image = generate_signal_image(
-                data_buffer=self.data_buffer,
-                icc_signals=close_signal,
-                smc_data=smc_data,  # Pasar datos SMC reales
-                signal_type="CIERRE"
-            )
-            
-            if close_image:
-                print(f"   🖼️ Imagen de cierre de trade generada: {close_image}")
-            else:
-                print(f"   ⚠️ No se pudo generar la imagen de cierre")
-        except Exception as e:
-            print(f"   ❌ Error generando imagen de cierre: {e}")
+        # MOSTRAR INFORMACIÓN DETALLADA DEL CIERRE DE TRADE
+        print(f"   📊 INFORMACIÓN DETALLADA DEL CIERRE:")
+        print(f"   " + "="*50)
+        print(f"   🎯 DIRECCIÓN: {direction}")
+        print(f"   💰 PRECIO DE ENTRADA: {trade.price:.5f}")
+        print(f"   💰 PRECIO DE CIERRE: {current_price:.5f}")
+        print(f"   📊 TIPO DE CIERRE: {close_type}")
+        print(f"   💰 P&L: {pnlcomm:.2f}")
+        print(f"   📈 ROI: {roi:.2f}%")
+        print(f"   📅 FECHA/HORA CIERRE: {self.data.datetime.datetime(0)}")
+        print(f"   " + "="*50)
         
         # Actualizar contadores
         self.trade_count += 1
@@ -658,52 +487,30 @@ class ICCStrategy(bt.Strategy):
             
             self.log(f'📊 TRADE CERRADO - CIERRE MANUAL - {result} - P&L: {pnl:.2f}')
             
-            # GENERAR IMAGEN DE CIERRE MANUAL AL FINAL DEL BACKTESTING
-            print(f"   🎨 Generando imagen de cierre manual...")
-            try:
-                # Crear señal de cierre manual
-                manual_close_signal = [{
-                    'direction': 'LONG' if self.position.size > 0 else 'SHORT',
-                    'entry_price': self.position.price,
-                    'risk_management': {
-                        'stop_loss': 0,  # No aplica para cierre manual
-                        'take_profit': current_price  # Precio de cierre
-                    }
-                }]
-                
-                # Obtener datos SMC para la imagen de cierre manual
-                smc_data = self.smartmoney_icc.get_smc_data(self.df_5m, self.df_1h, self.df_4h)
-                
-                # Generar imagen de cierre manual con datos SMC
-                manual_close_image = generate_signal_image(
-                    data_buffer=self.data_buffer,
-                    icc_signals=manual_close_signal,
-                    smc_data=smc_data,  # Pasar datos SMC reales
-                    signal_type="CIERRE_MANUAL"
-                )
-                
-                if manual_close_image:
-                    print(f"   🖼️ Imagen de cierre manual generada: {manual_close_image}")
-                else:
-                    print(f"   ⚠️ No se pudo generar la imagen de cierre manual")
-            except Exception as e:
-                print(f"   ❌ Error generando imagen de cierre manual: {e}")
+            # MOSTRAR INFORMACIÓN DEL CIERRE MANUAL AL FINAL DEL BACKTESTING
+            print(f"   📊 INFORMACIÓN DEL CIERRE MANUAL:")
+            print(f"   " + "="*50)
+            print(f"   🎯 DIRECCIÓN: {'LONG' if self.position.size > 0 else 'SHORT'}")
+            print(f"   💰 PRECIO DE ENTRADA: {self.position.price:.5f}")
+            print(f"   💰 PRECIO DE CIERRE: {current_price:.5f}")
+            print(f"   📊 TIPO DE CIERRE: CIERRE MANUAL (Final del backtesting)")
+            print(f"   💰 P&L: {pnl:.2f}")
+            print(f"   📅 FECHA/HORA CIERRE: {self.data.datetime.datetime(0)}")
+            print(f"   " + "="*50)
             
             self.close()
             
         # Limpiar información de gestión de riesgo
         self.current_position_info = None
         
-        # Contar imágenes generadas
-        images_dir = "frames_png"
-        if os.path.exists(images_dir):
-            image_files = [f for f in os.listdir(images_dir) if f.startswith("ICC_Signal_")]
-            print(f"   🎨 Total de imágenes generadas: {len(image_files)}")
-            if image_files:
-                print(f"      • Imágenes guardadas en: {images_dir}/")
-                print(f"      • Archivos: {', '.join(image_files[-5:])}")  # Mostrar últimas 5 imágenes
-        else:
-            print(f"   🎨 No se generaron imágenes (directorio no encontrado)")
+        # Resumen de operaciones ejecutadas
+        print(f"   📊 RESUMEN DE OPERACIONES EJECUTADAS:")
+        print(f"      • Total de operaciones: {self.trade_count}")
+        print(f"      • Operaciones ganadoras: {self.win_count}")
+        print(f"      • Operaciones perdedoras: {self.loss_count}")
+        if self.trade_count > 0:
+            win_rate = (self.win_count / self.trade_count) * 100
+            print(f"      • Tasa de éxito: {win_rate:.1f}%")
         
         print(f"   📊 Contador de trades al final: {self.trade_count}")
         
@@ -769,7 +576,7 @@ def load_data():
         print(f"   📊 Tipo de índice después de to_datetime: {type(df_5m.index)}")
         
         # Tomar solo las últimas 1500 velas para el test
-        df_5m = df_5m.tail(1500)
+        # df_5m = df_5m.tail(1500)
         
         # Crear timeframes superiores desde los datos 5M reales (necesita DatetimeIndex)
         print(f"🔄 Creando timeframes superiores...")
