@@ -22,22 +22,41 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importar la estrategia ICC real
-from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
+try:
+    from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
+    print("✅ Estrategia ICC importada exitosamente")
+except ImportError as e:
+    print(f"❌ Error importando estrategia ICC: {e}")
+    SmartMoneyICCStrategy = None
+
+# Importar la librería de análisis de mercado
+from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 
 # Importar el generador de imágenes SMC (basado en smart01.py)
 try:
-    from image_generator_c import generate_signal_image
+    from image_generator_c import generate_signal_image, generate_smc_chart
+    print("✅ Generador de imágenes importado exitosamente")
 except ImportError:
-    # Si no se puede importar directamente, usar import relativo
-    from .image_generator_c import generate_signal_image
+    try:
+        # Si no se puede importar directamente, usar import relativo
+        from .image_generator_c import generate_signal_image, generate_smc_chart
+        print("✅ Generador de imágenes importado exitosamente (relativo)")
+    except ImportError as e:
+        print(f"❌ Error importando generador de imágenes: {e}")
+        generate_signal_image = None
+        generate_smc_chart = None
 
 class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
     
+
     def __init__(self, df_1h=None, df_4h=None):
         # Indicadores técnicos básicos para Backtrader
         self.rsi = bt.indicators.RSI(self.data.close, period=14)
         self.macd = bt.indicators.MACD(self.data.close)
+        
+        # Instancia de análisis de mercado para detectar tendencias
+        self.market_analysis = MarketAnalysisLib()
         
         # Variable para órdenes pendientes
         self.order = None
@@ -51,12 +70,20 @@ class ICCStrategy(bt.Strategy):
         self.trades = []
         
         # Inicializar la estrategia SmartMoney ICC
-        self.smartmoney_icc = SmartMoneyICCStrategy(
-            risk_reward_min=1.0,  # R:R mínimo 1:1
-            ob_lookback=50,
-            fvg_lookback=30,
-            swing_length=20
-        )
+        try:
+            if SmartMoneyICCStrategy is None:
+                raise ImportError("SmartMoneyICCStrategy no está disponible")
+            
+            self.smartmoney_icc = SmartMoneyICCStrategy(
+                risk_reward_min=1.0,  # R:R mínimo 1:1
+                ob_lookback=50,
+                fvg_lookback=30,
+                swing_length=20
+            )
+            print(f"   ✅ Estrategia SmartMoney ICC inicializada correctamente")
+        except Exception as e:
+            print(f"   ❌ Error inicializando estrategia SmartMoney ICC: {e}")
+            self.smartmoney_icc = None
         
         # Almacenar datos para análisis SmartMoney
         self.data_buffer = []
@@ -90,6 +117,24 @@ class ICCStrategy(bt.Strategy):
         dt = dt or self.datas[0].datetime.date(0)
         print(f'{dt.isoformat()}: {txt}')
         
+    def calculate_macd(df, fast=12, slow=26, signal=9):
+        """Calcular MACD: MACD Line, Signal Line, Histogram"""
+        exp1 = df['close'].ewm(span=fast, adjust=False).mean()
+        exp2 = df['close'].ewm(span=slow, adjust=False).mean()
+        macd_line = exp1 - exp2
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        histogram = macd_line - signal_line
+        return macd_line, signal_line, histogram
+
+    def calculate_rsi(df, period=14):
+        """Calcular RSI"""
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+
     def update_progress(self):
         """Actualizar progreso del backtesting"""
         self.current_bar += 1
@@ -111,6 +156,11 @@ class ICCStrategy(bt.Strategy):
     def next(self):
         # Actualizar progreso
         self.update_progress()
+        
+        # Mostrar progreso cada 200 velas
+        if self.current_bar % 200 == 0:
+            current_time = self.data.datetime.datetime(0)
+            print(f"   📊 Procesando vela {self.current_bar}/{self.total_bars} - {current_time}")
         
         # Solo operar si no hay órdenes pendientes
         if self.order:
@@ -143,14 +193,27 @@ class ICCStrategy(bt.Strategy):
                 # Convertir buffer a DataFrame
                 df_5m = pd.DataFrame(self.data_buffer)
                 df_5m.set_index('datetime', inplace=True)
+                # Convertir el índice a string con formato específico para la estrategia ICC
+                if not isinstance(df_5m.index, pd.DatetimeIndex):
+                    df_5m.index = pd.to_datetime(df_5m.index)
+                df_5m.index = df_5m.index.strftime("%Y-%m-%d %H:%M:%S")
                 
                 # Usar los datos de múltiples timeframes ya cargados
                 # Filtrar solo los datos que corresponden al período actual
-                current_time = df_5m.index[-1]
+                current_time_str = df_5m.index[-1]  # String format
+                current_time_dt = pd.to_datetime(current_time_str)  # Convertir a datetime para comparar
                 
-                # Filtrar datos H1 y H4 hasta el tiempo actual
-                df_1h_filtered = self.df_1h[self.df_1h.index <= current_time] if self.df_1h is not None else pd.DataFrame()
-                df_4h_filtered = self.df_4h[self.df_4h.index <= current_time] if self.df_4h is not None else pd.DataFrame()
+                # Filtrar datos H1 y H4 hasta el tiempo actual (usando datetime para comparar)
+                df_1h_filtered = self.df_1h[self.df_1h.index <= current_time_dt] if self.df_1h is not None else pd.DataFrame()
+                df_4h_filtered = self.df_4h[self.df_4h.index <= current_time_dt] if self.df_4h is not None else pd.DataFrame()
+                
+                # Convertir los índices filtrados a string para la estrategia ICC
+                if not df_1h_filtered.empty:
+                    df_1h_filtered = df_1h_filtered.copy()
+                    df_1h_filtered.index = df_1h_filtered.index.strftime("%Y-%m-%d %H:%M:%S")
+                if not df_4h_filtered.empty:
+                    df_4h_filtered = df_4h_filtered.copy()
+                    df_4h_filtered.index = df_4h_filtered.index.strftime("%Y-%m-%d %H:%M:%S")
                 
                 # Almacenar DataFrames para acceso en otros métodos
                 self.df_5m = df_5m
@@ -204,16 +267,122 @@ class ICCStrategy(bt.Strategy):
                             else:
                                 print(f"      ❌ No se obtuvieron datos SMC")
                             
+                            # Usar los últimos 100 datos actuales para calcular indicadores (como en smart01)
+                            analysis_df = df_5m.tail(100)  # Últimos 100 datos actuales
+                            macd_line, signal_line, histogram = self.calculate_macd(analysis_df)
+                            rsi = self.calculate_rsi(analysis_df)
+
+                            current_trend_15m = 0
+                            current_trend_1h = 0
+                            current_trend_4h = 0
+
+                            # Crear DataFrames de timeframes superiores a partir de df_5m
+                            print("   📊 Creando timeframes superiores desde datos 5M...")
+                            
+                            # Resample a 1H (12 velas de 5M = 1H)
+                            current_df_1h = df_5m.resample('1H').agg({
+                                'open': 'first',
+                                'high': 'max',
+                                'low': 'min',
+                                'close': 'last',
+                                'volume': 'sum'
+                            }).dropna()
+                            
+                            # Resample a 4H (48 velas de 5M = 4H)
+                            current_df_4h = df_5m.resample('4H').agg({
+                                'open': 'first',
+                                'high': 'max',
+                                'low': 'min',
+                                'close': 'last',
+                                'volume': 'sum'
+                            }).dropna()
+                            
+                            print(f"   ✅ Timeframes creados: 1H={len(current_df_1h)} velas, 4H={len(current_df_4h)} velas")
+
+                            trend_result_15m = self.market_analysis.detect_trend(df_5m, method='structural')
+                            current_trend_15m = trend_result_15m['trend'].iloc[-1]
+
+                            trend_result_1h = self.market_analysis.detect_trend(current_df_1h, method='structural')
+                            current_trend_1h = trend_result_1h['trend'].iloc[-1]
+
+                            trend_result_4h = self.market_analysis.detect_trend(current_df_4h, method='structural')
+                            current_trend_4h = trend_result_4h['trend'].iloc[-1]
+
+                            # Extraer todos los datos SMC del diccionario
+                            fvg_data = smc_data.get('fvg_data', pd.DataFrame())
+                            swing_highs_lows_data = smc_data.get('swing_data', pd.DataFrame())
+                            bos_choch_data = smc_data.get('bos_choch_data', pd.DataFrame())
+                            ob_data = smc_data.get('order_blocks', pd.DataFrame())
+                            
+                            # Debug: Verificar datos SMC antes de enviar a generate_smc_chart
+                            print(f"   🔍 Debug datos SMC para visualización:")
+                            print(f"      • FVG data shape: {fvg_data.shape if not fvg_data.empty else 'Empty'}")
+                            print(f"      • Swing data shape: {swing_highs_lows_data.shape if not swing_highs_lows_data.empty else 'Empty'}")
+                            print(f"      • BOS/CHOCH data shape: {bos_choch_data.shape if not bos_choch_data.empty else 'Empty'}")
+                            print(f"      • Order Blocks data shape: {ob_data.shape if not ob_data.empty else 'Empty'}")
+                            
+                            # Verificar si hay datos SMC válidos
+                            if not fvg_data.empty:
+                                print(f"      • FVG columns: {list(fvg_data.columns)}")
+                                print(f"      • FVG sample: {fvg_data.head(2).to_dict() if len(fvg_data) > 0 else 'No data'}")
+                            if not bos_choch_data.empty:
+                                print(f"      • BOS/CHOCH columns: {list(bos_choch_data.columns)}")
+                                print(f"      • BOS/CHOCH sample: {bos_choch_data.head(2).to_dict() if len(bos_choch_data) > 0 else 'No data'}")
+                            
+                            # Crear datos vacíos para indicadores adicionales (mantener compatibilidad)
+                            liquidity_data = pd.DataFrame()
+                            previous_high_low_data = pd.DataFrame()
+                            sessions = pd.DataFrame()
+                            retracements = pd.DataFrame()
+
+                            # Crear save_path con información de la operación
+                            current_time = datetime.now()
+                            direction = signal.get('direction', 'UNKNOWN')
+                            entry_price = signal.get('entry_price', 0)
+                            
+                            # Asegurar que el directorio frames_png existe
+                            os.makedirs("frames_png", exist_ok=True)
+                            
+                            # Formato: frames_png/ICC_Signal_YYYYMMDD_HHMMSS_DIRECTION_ENTRYPRICE.png
+                            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+                            save_path = f"frames_png/ICC_Signal_{timestamp}_{direction}_{entry_price:.5f}.png"
+                            
+                            print(f"   💾 Guardando imagen en: {save_path}")
+                            
+                            # Debug: Verificar data_buffer
+                            print(f"   🔍 Debug data_buffer:")
+                            print(f"      • data_buffer type: {type(self.data_buffer)}")
+                            print(f"      • data_buffer length: {len(self.data_buffer) if hasattr(self.data_buffer, '__len__') else 'No length'}")
+                            if hasattr(self.data_buffer, 'columns'):
+                                print(f"      • data_buffer columns: {list(self.data_buffer.columns)}")
+                            if hasattr(self.data_buffer, 'index'):
+                                print(f"      • data_buffer index type: {type(self.data_buffer.index)}")
+
                             # Generar imagen con los datos actuales, la señal detectada y los datos SMC reales
-                            image_filename = generate_signal_image(
-                                data_buffer=self.data_buffer,
-                                icc_signals=signals,
-                                smc_data=smc_data,  # Pasar datos SMC reales
-                                signal_type="ICC"
+                            generate_smc_chart(
+                                df=analysis_df,  # DataFrame ya tiene formato correcto
+                                macd_line=macd_line.tail(len(analysis_df)),
+                                signal_line=signal_line.tail(len(analysis_df)),
+                                histogram=histogram.tail(len(analysis_df)),
+                                rsi=rsi.tail(len(analysis_df)),
+                                current_trend=current_trend_15m,  # Usar valor numérico, no DataFrame
+                                current_trend_15m=current_trend_15m,
+                                current_trend_1h=current_trend_1h,
+                                current_trend_4h=current_trend_4h,
+                                fvg_data=fvg_data,
+                                swing_highs_lows_data=swing_highs_lows_data,
+                                bos_choch_data=bos_choch_data,
+                                ob_data=ob_data,
+                                liquidity_data=liquidity_data,
+                                previous_high_low_data=previous_high_low_data,
+                                sessions=sessions,
+                                retracements=retracements,
+                                frame_filename=save_path
                             )
                             
-                            if image_filename:
-                                print(f"   🖼️ Imagen de señal ICC generada exitosamente: {image_filename}")
+                            # Verificar si el archivo se creó exitosamente
+                            if os.path.exists(save_path):
+                                print(f"   🖼️ Imagen de señal ICC generada exitosamente: {save_path}")
                             else:
                                 print(f"   ⚠️ No se pudo generar la imagen de la señal ICC")
                         except Exception as e:
@@ -460,7 +629,9 @@ class ICCStrategy(bt.Strategy):
         """Método llamado al inicio del backtesting"""
         # Inicializar el total de barras cuando los datos estén disponibles
         self.total_bars = len(self.data)
+        print(f"🚀 Estrategia ICC SmartMoney iniciada")
         print(f"   📊 Total de velas a procesar: {self.total_bars}")
+        print(f"   🎯 Buscando señales ICC en los datos...")
     
     def stop(self):
         """Método llamado al final del backtesting"""
@@ -588,14 +759,19 @@ def load_data():
         # Asegurar que las columnas estén en el orden correcto
         df_5m = df_5m[["open", "high", "low", "close", "volume"]]
         
-        # Convertir el índice a datetime
+        # Convertir el índice a datetime primero
         print(f"🔄 Procesando fechas...")
+        print(f"   📊 Tipo de índice antes: {type(df_5m.index)}")
+        print(f"   📊 Primeros valores del índice: {df_5m.index[:3].tolist()}")
+        
+        # Convertir a datetime primero
         df_5m.index = pd.to_datetime(df_5m.index)
+        print(f"   📊 Tipo de índice después de to_datetime: {type(df_5m.index)}")
         
         # Tomar solo las últimas 1500 velas para el test
         df_5m = df_5m.tail(1500)
         
-        # Crear timeframes superiores desde los datos 5M reales
+        # Crear timeframes superiores desde los datos 5M reales (necesita DatetimeIndex)
         print(f"🔄 Creando timeframes superiores...")
         
         # H1 (1 hora) - agregar cada 12 velas de 5M
@@ -615,6 +791,13 @@ def load_data():
             'close': 'last',
             'volume': 'sum'
         }).dropna()
+        
+        # IMPORTANTE: Mantener el índice como datetime para Backtrader
+        # Solo convertiremos a string cuando sea necesario para la estrategia ICC
+        print(f"🔄 Manteniendo índices como datetime para Backtrader...")
+        
+        print(f"   📊 Tipo de índice final: {type(df_5m.index)}")
+        print(f"   📊 Primeros valores del índice: {df_5m.index[:3].tolist()}")
         
         print(f"   📊 Filas después de filtrado:")
         print(f"      • 5M: {len(df_5m)} velas")
@@ -694,11 +877,24 @@ def run_backtest():
         cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
         cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
         
-
+        print(f"🚀 Iniciando simulación de backtesting...")
+        print(f"   📊 Total de velas a procesar: {len(df_5m)}")
+        print(f"   💰 Capital inicial: $100,000")
+        print(f"   📈 Comisión: 0.1%")
         
         start_time = time.time()
-        results = cerebro.run()
-        end_time = time.time()
+        print(f"   ⏳ Ejecutando cerebro.run()...")
+        try:
+            results = cerebro.run()
+            end_time = time.time()
+            print(f"   ✅ Simulación completada en {end_time - start_time:.2f} segundos")
+        except Exception as e:
+            end_time = time.time()
+            print(f"   ❌ Error durante la simulación: {e}")
+            print(f"   ⏱️ Tiempo transcurrido: {end_time - start_time:.2f} segundos")
+            import traceback
+            traceback.print_exc()
+            return None
         
         strategy = results[0]
         
@@ -764,11 +960,16 @@ def run_backtest():
         # Generar gráfico
         try:
             print(f"\n📈 Generando gráfico del backtesting...")
-            #cerebro.plot(style='candlestick', barup='green', bardown='red', volume=False, figsize=(15, 10))
-            cerebro.plot()
+            cerebro.plot(style='candlestick', barup='green', bardown='red', volume=False, figsize=(15, 10))
             print(f"   ✅ Gráfico generado exitosamente")
         except Exception as e:
             print(f"   ❌ Error generando gráfico: {e}")
+            print(f"   🔧 Intentando generar gráfico básico...")
+            try:
+                cerebro.plot()
+                print(f"   ✅ Gráfico básico generado exitosamente")
+            except Exception as e2:
+                print(f"   ❌ Error generando gráfico básico: {e2}")
         
         return strategy
         
@@ -778,9 +979,13 @@ def run_backtest():
 if __name__ == '__main__':
     """Función principal"""
     try:
+        print("🚀 Iniciando backtesting ICC SmartMoney...")
         strategy = run_backtest()
+        print("✅ Backtesting completado exitosamente")
         
     except KeyboardInterrupt:
-        pass
+        print("⏹️ Backtesting interrumpido por el usuario")
     except Exception as e:
-        pass
+        print(f"❌ Error ejecutando backtesting: {e}")
+        import traceback
+        traceback.print_exc()

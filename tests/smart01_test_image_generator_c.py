@@ -19,6 +19,10 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from image_generator_c import generate_smc_chart
 
+# Importar estrategia ICC para obtener datos SMC reales
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from estrategia.icc import ICCStrategy
+
 
 
 # ============================================================================
@@ -746,102 +750,49 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     except Exception as e:
         print(f"   ⚠️ Error en análisis de confirmación múltiple: {e}")
     
-    # Agregar indicadores SMC al gráfico principal
-    # Crear datos simulados para los indicadores SMC (en un caso real vendrían de tu análisis)
-    fvg_data = pd.DataFrame({
-        'FVG': [1 if i % 20 == 0 else np.nan for i in range(len(window_df))],
-        'Top': window_df['high'] * 1.001,
-        'Bottom': window_df['low'] * 0.999,
-        'MitigatedIndex': [i + 10 if i % 20 == 0 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para swing highs/lows
-    swing_highs_levels = []
-    for i in range(len(window_df)):
-        if i % 15 == 0:
-            swing_highs_levels.append(window_df['high'].iloc[i])
-        elif i % 15 == 7:
-            swing_highs_levels.append(window_df['low'].iloc[i])
-        else:
-            swing_highs_levels.append(np.nan)
-    
-    swing_highs_lows_data = pd.DataFrame({
-        'HighLow': [1 if i % 15 == 0 else (-1 if i % 15 == 7 else np.nan) for i in range(len(window_df))],
-        'Level': swing_highs_levels
-    }, index=window_df.index)
-    
-    # Crear datos para BOS/CHOCH
-    bos_choch_levels = []
-    for i in range(len(window_df)):
-        if i % 25 == 0:
-            bos_choch_levels.append(window_df['high'].iloc[i])
-        elif i % 25 == 12:
-            bos_choch_levels.append(window_df['low'].iloc[i])
-        else:
-            bos_choch_levels.append(np.nan)
-    
-    bos_choch_data = pd.DataFrame({
-        'BOS': [1 if i % 25 == 0 else np.nan for i in range(len(window_df))],
-        'CHOCH': [1 if i % 25 == 12 else np.nan for i in range(len(window_df))],
-        'Level': bos_choch_levels,
-        'BrokenIndex': [i + 8 if i % 25 == 0 or i % 25 == 12 else 0 for i in range(len(window_df))],
-        'ChoCHIndex': [i + 8 if i % 25 == 12 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    ob_data = pd.DataFrame({
-        'OB': [1 if i % 30 == 0 else (-1 if i % 30 == 15 else np.nan) for i in range(len(window_df))],
-        'Top': window_df['high'] * 1.002,
-        'Bottom': window_df['low'] * 0.998,
-        'MitigatedIndex': [i + 12 if i % 30 == 0 or i % 30 == 15 else 0 for i in range(len(window_df))],
-        'OBVolume': [1000000 + i * 10000 for i in range(len(window_df))],
-        'Percentage': [85 + i % 10 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para liquidez
-    liquidity_levels = []
-    for i in range(len(window_df)):
-        if i % 18 == 0:
-            liquidity_levels.append(window_df['high'].iloc[i] * 1.001)
-        else:
-            liquidity_levels.append(np.nan)
-    
-    liquidity_data = pd.DataFrame({
-        'Liquidity': [1 if i % 18 == 0 else np.nan for i in range(len(window_df))],
-        'Level': liquidity_levels,
-        'End': [i + 6 if i % 18 == 0 else 0 for i in range(len(window_df))],
-        'Swept': [i + 3 if i % 18 == 0 else 0 for i in range(len(window_df))]
-    }, index=window_df.index)
-    
-    # Crear datos para máximos y mínimos previos
-    prev_high_levels = []
-    prev_low_levels = []
-    for i in range(len(window_df)):
-        if i % 22 == 0:
-            prev_high_levels.append(window_df['high'].max())
-        else:
-            prev_high_levels.append(np.nan)
+    # Obtener datos SMC reales de la estrategia ICC
+    print("   🔍 Obteniendo datos SMC reales de la estrategia ICC...")
+    try:
+        # Crear instancia de la estrategia ICC
+        smartmoney_icc = ICCStrategy()
         
-        if i % 22 == 11:
-            prev_low_levels.append(window_df['low'].min())
+        # Obtener datos SMC reales
+        smc_data = smartmoney_icc.get_smc_data(window_df, df_1h, df_4h)
+        
+        if smc_data:
+            # Extraer datos reales de SMC
+            fvg_data = smc_data.get('fvg_data', pd.DataFrame())
+            swing_highs_lows_data = smc_data.get('swing_data', pd.DataFrame())
+            bos_choch_data = smc_data.get('bos_choch_data', pd.DataFrame())
+            ob_data = smc_data.get('order_blocks', pd.DataFrame())
+            
+            print(f"   ✅ Datos SMC reales obtenidos:")
+            print(f"      • Fair Value Gaps: {len(fvg_data) if not fvg_data.empty else 0}")
+            print(f"      • Swing Points: {len(swing_highs_lows_data) if not swing_highs_lows_data.empty else 0}")
+            print(f"      • BOS/CHOCH: {len(bos_choch_data) if not bos_choch_data.empty else 0}")
+            print(f"      • Order Blocks: {len(ob_data) if not ob_data.empty else 0}")
         else:
-            prev_low_levels.append(np.nan)
+            print("   ⚠️ No se pudieron obtener datos SMC reales, usando datos vacíos")
+            fvg_data = pd.DataFrame()
+            swing_highs_lows_data = pd.DataFrame()
+            bos_choch_data = pd.DataFrame()
+            ob_data = pd.DataFrame()
+            
+    except Exception as e:
+        print(f"   ❌ Error obteniendo datos SMC reales: {e}")
+        # Fallback a datos vacíos si hay error
+        fvg_data = pd.DataFrame()
+        swing_highs_lows_data = pd.DataFrame()
+        bos_choch_data = pd.DataFrame()
+        ob_data = pd.DataFrame()
     
-    previous_high_low_data = pd.DataFrame({
-        'PreviousHigh': prev_high_levels,
-        'PreviousLow': prev_low_levels
-    }, index=window_df.index)
+    # Los datos BOS/CHOCH y Order Blocks ya se obtuvieron de la estrategia ICC arriba
     
-    sessions = pd.DataFrame({
-        'Active': [1 if i % 40 == 0 else 0 for i in range(len(window_df))],
-        'High': window_df['high'] * 1.003,
-        'Low': window_df['low'] * 0.997
-    }, index=window_df.index)
-    
-    retracements = pd.DataFrame({
-        'Direction': [1 if i % 35 == 0 else (-1 if i % 35 == 17 else 0) for i in range(len(window_df))],
-        'CurrentRetracement%': [23.6 + i % 20 for i in range(len(window_df))],
-        'DeepestRetracement%': [38.2 + i % 30 for i in range(len(window_df))]
-    }, index=window_df.index)
+    # Crear datos vacíos para indicadores adicionales (mantener compatibilidad)
+    liquidity_data = pd.DataFrame()
+    previous_high_low_data = pd.DataFrame()
+    sessions = pd.DataFrame()
+    retracements = pd.DataFrame()
     
     # MEJORA: Renombrar archivo según confirmación múltiple de tendencias
     base_filename = f"frame_{pos:04d}"
