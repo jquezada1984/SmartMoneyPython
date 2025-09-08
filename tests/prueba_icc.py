@@ -21,6 +21,8 @@ import time
 # Agregar el directorio raíz al path para importar módulos del proyecto
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+cantidad_velas = 2500
+
 # Importar la estrategia ICC real
 try:
     from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
@@ -39,7 +41,13 @@ class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
     
 
-    def __init__(self, df_1h=None, df_4h=None):
+    def __init__(self, df_5m=None, df_1h=None, df_4h=None, cantidad_velas=2500):
+        # Guardar referencias a los DataFrames
+        self.df_5m = df_5m
+        self.df_1h = df_1h
+        self.df_4h = df_4h
+        self.cantidad_velas = cantidad_velas
+        
         # Indicadores técnicos básicos para Backtrader
         self.rsi = bt.indicators.RSI(self.data.close, period=14)
         self.macd = bt.indicators.MACD(self.data.close)
@@ -57,6 +65,10 @@ class ICCStrategy(bt.Strategy):
         
         # Lista para almacenar resultados de operaciones
         self.trades = []
+        
+        # Variables para trailing stop
+        self.trailing_stop_breakeven = False  # Si ya se movió al breakeven
+        self.trailing_stop_profit = False     # Si ya se movió para asegurar ganancia
         
         # Inicializar la estrategia SmartMoney ICC
         try:
@@ -237,6 +249,10 @@ class ICCStrategy(bt.Strategy):
                             'structural_levels': structural_levels
                         }
                         
+                        # Reiniciar variables de trailing stop para nueva posición
+                        self.trailing_stop_breakeven = False
+                        self.trailing_stop_profit = False
+                        
                         # MOSTRAR INFORMACIÓN DETALLADA DE LA SEÑAL ICC
                         print(f"   📊 INFORMACIÓN DETALLADA DE LA SEÑAL ICC:")
                         print(f"   " + "="*60)
@@ -279,7 +295,7 @@ class ICCStrategy(bt.Strategy):
                 pass
     
     def check_icc_risk_management(self):
-        """Verificar Stop Loss y Take Profit basado en gestión de riesgo ICC"""
+        """Verificar Stop Loss y Take Profit basado en gestión de riesgo ICC con Trailing Stop"""
         if not self.current_position_info:
             return
             
@@ -292,12 +308,37 @@ class ICCStrategy(bt.Strategy):
         take_profit = self.current_position_info.get('take_profit')
         rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
         
+        # Calcular distancia desde entrada
         if direction == 'LONG':
+            distance_to_profit = take_profit - entry_price if take_profit else 0
+            distance_to_sl = entry_price - stop_loss
+            current_profit_distance = current_price - entry_price
+            
+            # TRAILING STOP LOGIC
+            # 1. Mover SL al breakeven cuando el precio avance la misma distancia hacia el profit
+            if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
+                # Mover SL al punto de entrada (breakeven) con un pequeño margen
+                new_sl = entry_price + (distance_to_sl * 0.1)  # 10% del riesgo original como margen
+                self.current_position_info['stop_loss'] = new_sl
+                self.trailing_stop_breakeven = True
+                self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
+            
+            # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
+            elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
+                  current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
+                # Mover SL para asegurar ganancia de al menos 1:1
+                new_sl = entry_price + distance_to_sl  # Asegurar ganancia 1:1
+                self.current_position_info['stop_loss'] = new_sl
+                self.trailing_stop_profit = True
+                self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
+            
             # Verificar Stop Loss (precio por debajo del SL)
-            if current_price <= stop_loss:
-                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
+            if current_price <= self.current_position_info['stop_loss']:
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
                 self.close()
                 self.current_position_info = None
+                self.trailing_stop_breakeven = False
+                self.trailing_stop_profit = False
                 return
                 
             # Verificar Take Profit estructural ÚNICO
@@ -305,14 +346,40 @@ class ICCStrategy(bt.Strategy):
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
                 self.current_position_info = None
+                self.trailing_stop_breakeven = False
+                self.trailing_stop_profit = False
                 return
                 
         elif direction == 'SHORT':
+            distance_to_profit = entry_price - take_profit if take_profit else 0
+            distance_to_sl = stop_loss - entry_price
+            current_profit_distance = entry_price - current_price
+            
+            # TRAILING STOP LOGIC
+            # 1. Mover SL al breakeven cuando el precio avance la misma distancia hacia el profit
+            if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
+                # Mover SL al punto de entrada (breakeven) con un pequeño margen
+                new_sl = entry_price - (distance_to_sl * 0.1)  # 10% del riesgo original como margen
+                self.current_position_info['stop_loss'] = new_sl
+                self.trailing_stop_breakeven = True
+                self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
+            
+            # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
+            elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
+                  current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
+                # Mover SL para asegurar ganancia de al menos 1:1
+                new_sl = entry_price - distance_to_sl  # Asegurar ganancia 1:1
+                self.current_position_info['stop_loss'] = new_sl
+                self.trailing_stop_profit = True
+                self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
+            
             # Verificar Stop Loss (precio por encima del SL)
-            if current_price >= stop_loss:
-                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {stop_loss:.5f}")
+            if current_price >= self.current_position_info['stop_loss']:
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
                 self.close()
                 self.current_position_info = None
+                self.trailing_stop_breakeven = False
+                self.trailing_stop_profit = False
                 return
                 
             # Verificar Take Profit estructural ÚNICO
@@ -320,6 +387,8 @@ class ICCStrategy(bt.Strategy):
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
                 self.close()
                 self.current_position_info = None
+                self.trailing_stop_breakeven = False
+                self.trailing_stop_profit = False
                 return
     
     def notify_order(self, order):
@@ -456,8 +525,9 @@ class ICCStrategy(bt.Strategy):
     
     def start(self):
         """Método llamado al inicio del backtesting"""
-        # Inicializar el total de barras cuando los datos estén disponibles
-        self.total_bars = len(self.data)
+        # Usar la cantidad de velas especificada
+        self.total_bars = self.cantidad_velas
+        
         print(f"🚀 Estrategia ICC SmartMoney iniciada")
         print(f"   📊 Total de velas a procesar: {self.total_bars}")
         print(f"   🎯 Buscando señales ICC en los datos...")
@@ -576,7 +646,7 @@ def load_data():
         print(f"   📊 Tipo de índice después de to_datetime: {type(df_5m.index)}")
         
         # Tomar solo las últimas 1500 velas para el test
-        # df_5m = df_5m.tail(1500)
+        df_5m = df_5m.tail(cantidad_velas)
         
         # Crear timeframes superiores desde los datos 5M reales (necesita DatetimeIndex)
         print(f"🔄 Creando timeframes superiores...")
@@ -673,7 +743,7 @@ def run_backtest():
         cerebro.adddata(data_feed)
         
         # Agregar estrategia con datos de múltiples timeframes
-        cerebro.addstrategy(ICCStrategy, df_1h=df_1h, df_4h=df_4h)
+        cerebro.addstrategy(ICCStrategy, df_5m=df_5m, df_1h=df_1h, df_4h=df_4h, cantidad_velas=cantidad_velas)
         
         # Configurar plotting para mostrar señales automáticamente
         cerebro.addobserver(bt.observers.BuySell, barplot=True, bardist=0.0025)
