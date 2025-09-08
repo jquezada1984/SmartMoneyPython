@@ -661,8 +661,8 @@ def import_data():
     df_15m['volume'] = volume_prices
     df_15m.index = time_index
     
-    # Tomar las últimas 500 velas de 15M para tener más contexto
-    df_15m = df_15m.tail(500)
+    # Tomar las últimas 2500 velas de 15M para tener más contexto
+    df_15m = df_15m.tail(2500)
     
     # Para 1 hora: agregar 12 velas de 5M para crear 1 vela de 1H
     # Tomamos las últimas 6000 velas para tener más contexto (500 velas de 1H)
