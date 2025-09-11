@@ -70,6 +70,10 @@ class ICCStrategy(bt.Strategy):
         self.trailing_stop_breakeven = False  # Si ya se movió al breakeven
         self.trailing_stop_profit = False     # Si ya se movió para asegurar ganancia
         
+        # Variables para CSV de trades
+        self.trades_csv_data = []
+        self.csv_filename = f"trades_icc_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
         # Inicializar la estrategia SmartMoney ICC
         try:
             if SmartMoneyICCStrategy is None:
@@ -239,6 +243,11 @@ class ICCStrategy(bt.Strategy):
                         # Obtener niveles estructurales (para referencia)
                         structural_levels = risk_management.get('structural_levels', [])
                         
+                        # VALIDAR TAKE PROFIT ESTRUCTURAL
+                        if not self.validate_structural_take_profit(entry_price, take_profit, direction, self.df_1h, self.df_4h):
+                            print(f"   ❌ SEÑAL RECHAZADA: Take Profit no está en nivel estructural válido")
+                            continue
+                        
                         # Almacenar información de la posición para gestión de riesgo
                         self.current_position_info = {
                             'direction': direction,
@@ -281,7 +290,7 @@ class ICCStrategy(bt.Strategy):
                             print(f"   📉 ENVIANDO ORDEN DE VENTA...")
                             self.order = self.sell()
                         
-                        print(f"   ✅ ORDEN ENVIADA: {self.order}")
+                        print(f"   ✅ ORDEN ENVIADA")
                         # Solo procesar la primera señal
                         break
                 else:
@@ -314,8 +323,14 @@ class ICCStrategy(bt.Strategy):
             distance_to_sl = entry_price - stop_loss
             current_profit_distance = current_price - entry_price
             
+            # Debug: Verificar que las distancias sean correctas
+            if distance_to_profit <= distance_to_sl:
+                self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
+                self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
+                self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
+            
             # TRAILING STOP LOGIC
-            # 1. Mover SL al breakeven cuando el precio avance la misma distancia hacia el profit
+            # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
             if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
                 # Mover SL al punto de entrada (breakeven) con un pequeño margen
                 new_sl = entry_price + (distance_to_sl * 0.1)  # 10% del riesgo original como margen
@@ -355,8 +370,14 @@ class ICCStrategy(bt.Strategy):
             distance_to_sl = stop_loss - entry_price
             current_profit_distance = entry_price - current_price
             
+            # Debug: Verificar que las distancias sean correctas
+            if distance_to_profit <= distance_to_sl:
+                self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
+                self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
+                self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
+            
             # TRAILING STOP LOGIC
-            # 1. Mover SL al breakeven cuando el precio avance la misma distancia hacia el profit
+            # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
             if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
                 # Mover SL al punto de entrada (breakeven) con un pequeño margen
                 new_sl = entry_price - (distance_to_sl * 0.1)  # 10% del riesgo original como margen
@@ -391,6 +412,145 @@ class ICCStrategy(bt.Strategy):
                 self.trailing_stop_profit = False
                 return
     
+    def validate_structural_take_profit(self, entry_price, take_profit, direction, df_1h, df_4h):
+        """
+        Validar que el Take Profit esté en un nivel estructural válido de marcos superiores
+        y que no esté dentro de un bloque de consolidación
+        """
+        if not take_profit:
+            return False
+        
+        # Tolerancia para considerar que un precio está "cerca" de un nivel estructural
+        tolerance = 0.0005  # 5 pips
+        
+        # Obtener niveles estructurales de H1 y H4
+        h1_levels = self.get_structural_levels(df_1h)
+        h4_levels = self.get_structural_levels(df_4h)
+        
+        # Combinar niveles de ambos timeframes
+        all_levels = h1_levels + h4_levels
+        
+        # Verificar si el Take Profit está cerca de algún nivel estructural
+        tp_near_level = False
+        for level in all_levels:
+            if abs(take_profit - level) <= tolerance:
+                tp_near_level = True
+                break
+        
+        if not tp_near_level:
+            print(f"   ⚠️ Take Profit {take_profit:.5f} no está cerca de nivel estructural")
+            return False
+        
+        # Verificar que la entrada no esté dentro de un bloque de consolidación
+        if self.is_inside_consolidation_block(entry_price, df_1h, df_4h):
+            print(f"   ⚠️ Entrada {entry_price:.5f} está dentro de bloque de consolidación")
+            return False
+        
+        # Verificar que el Take Profit esté en la dirección correcta
+        if direction == 'LONG' and take_profit <= entry_price:
+            print(f"   ⚠️ Take Profit {take_profit:.5f} no está por encima de entrada {entry_price:.5f}")
+            return False
+        elif direction == 'SHORT' and take_profit >= entry_price:
+            print(f"   ⚠️ Take Profit {take_profit:.5f} no está por debajo de entrada {entry_price:.5f}")
+            return False
+        
+        return True
+    
+    def get_structural_levels(self, df):
+        """
+        Obtener niveles estructurales (soportes y resistencias) de un DataFrame
+        """
+        if df is None or len(df) < 20:
+            return []
+        
+        levels = []
+        
+        # Buscar máximos y mínimos locales
+        highs = df['high'].values
+        lows = df['low'].values
+        
+        # Encontrar máximos locales (resistencias)
+        for i in range(2, len(highs) - 2):
+            if (highs[i] > highs[i-1] and highs[i] > highs[i-2] and 
+                highs[i] > highs[i+1] and highs[i] > highs[i+2]):
+                levels.append(highs[i])
+        
+        # Encontrar mínimos locales (soportes)
+        for i in range(2, len(lows) - 2):
+            if (lows[i] < lows[i-1] and lows[i] < lows[i-2] and 
+                lows[i] < lows[i+1] and lows[i] < lows[i+2]):
+                levels.append(lows[i])
+        
+        # Filtrar niveles muy cercanos entre sí
+        filtered_levels = []
+        for level in sorted(levels):
+            if not filtered_levels or abs(level - filtered_levels[-1]) > 0.001:  # 10 pips mínimo
+                filtered_levels.append(level)
+        
+        return filtered_levels
+    
+    def is_inside_consolidation_block(self, price, df_1h, df_4h):
+        """
+        Verificar si un precio está dentro de un bloque de consolidación
+        """
+        if df_1h is None or len(df_1h) < 10:
+            return False
+        
+        # Obtener el rango de precios reciente en H1 (últimas 10 velas)
+        recent_1h = df_1h.tail(10)
+        recent_high = recent_1h['high'].max()
+        recent_low = recent_1h['low'].min()
+        
+        # Si el precio está dentro del rango reciente, podría estar en consolidación
+        if recent_low <= price <= recent_high:
+            # Verificar si hay mucha volatilidad (no consolidación)
+            price_range = recent_high - recent_low
+            if price_range < 0.002:  # Menos de 20 pips de rango
+                return True
+        
+        return False
+    
+    def add_trade_to_csv(self, trade_data):
+        """
+        Agregar información de trade al CSV
+        """
+        self.trades_csv_data.append(trade_data)
+    
+    def save_trades_csv(self):
+        """
+        Guardar el CSV con todos los trades
+        """
+        if not self.trades_csv_data:
+            return
+        
+        import csv
+        import os
+        
+        # Crear directorio si no existe
+        csv_dir = "trades_logs"
+        if not os.path.exists(csv_dir):
+            os.makedirs(csv_dir)
+        
+        csv_path = os.path.join(csv_dir, self.csv_filename)
+        
+        # Definir headers del CSV
+        headers = [
+            'Fecha', 'Hora', 'Minuto', 'Dia_Semana',
+            'Tipo_Operacion', 'Punto_Entrada', 'Stop_Loss', 'Take_Profit',
+            'R_R_Ratio', 'Precio_Cierre', 'Fecha_Cierre', 'Hora_Cierre',
+            'Resultado', 'P_L_Bruto', 'P_L_Neto', 'ROI_Porcentaje',
+            'Tipo_Cierre', 'Duracion_Minutos', 'Trailing_Stop_Breakeven', 'Trailing_Stop_Profit'
+        ]
+        
+        # Escribir CSV
+        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(headers)
+            writer.writerows(self.trades_csv_data)
+        
+        print(f"   📊 CSV de trades guardado: {csv_path}")
+        print(f"   📈 Total de trades registrados: {len(self.trades_csv_data)}")
+    
     def notify_order(self, order):
         """Notificar cambios en órdenes"""
         print(f"   📋 Notificación de orden: {order.status}")
@@ -424,10 +584,37 @@ class ICCStrategy(bt.Strategy):
                     take_profit = self.current_position_info['take_profit']
                     rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
                     
+                    current_time = self.data.datetime.datetime(0)
                     self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
-                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
+                    self.log(f'   📅 Hora de ejecución: {current_time.strftime("%Y-%m-%d %H:%M:%S")}')
+                    self.log(f'   📊 Cantidad: +{order.executed.size} (COMPRA)')
+                    self.log(f'   💰 Valor total: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
                     self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
                     self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
+                    
+                    # Agregar trade al CSV
+                    self.add_trade_to_csv([
+                        current_time.strftime("%Y-%m-%d"),  # Fecha
+                        current_time.strftime("%H:%M:%S"),  # Hora
+                        current_time.minute,                # Minuto
+                        current_time.strftime("%A"),        # Día de la semana
+                        'LONG',                             # Tipo operación
+                        order.executed.price,               # Punto entrada
+                        stop_loss,                          # Stop Loss
+                        take_profit,                        # Take Profit
+                        rr_ratio,                           # R:R Ratio
+                        '',                                 # Precio cierre (se llenará después)
+                        '',                                 # Fecha cierre (se llenará después)
+                        '',                                 # Hora cierre (se llenará después)
+                        '',                                 # Resultado (se llenará después)
+                        '',                                 # P&L Bruto (se llenará después)
+                        '',                                 # P&L Neto (se llenará después)
+                        '',                                 # ROI % (se llenará después)
+                        '',                                 # Tipo cierre (se llenará después)
+                        '',                                 # Duración minutos (se llenará después)
+                        False,                              # Trailing Stop Breakeven
+                        False                               # Trailing Stop Profit
+                    ])
                 else:
                     self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
             else:
@@ -437,10 +624,37 @@ class ICCStrategy(bt.Strategy):
                     take_profit = self.current_position_info['take_profit']
                     rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
                     
+                    current_time = self.data.datetime.datetime(0)
                     self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
-                    self.log(f'   💰 Costo: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
+                    self.log(f'   📅 Hora de ejecución: {current_time.strftime("%Y-%m-%d %H:%M:%S")}')
+                    self.log(f'   📊 Cantidad: {order.executed.size} (VENTA)')
+                    self.log(f'   💰 Valor total: {order.executed.value:.2f}, Comisión: {order.executed.comm:.2f}')
                     self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
-                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.2f} (R:R 1:{rr_ratio:.2f})')
+                    self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
+                    
+                    # Agregar trade al CSV
+                    self.add_trade_to_csv([
+                        current_time.strftime("%Y-%m-%d"),  # Fecha
+                        current_time.strftime("%H:%M:%S"),  # Hora
+                        current_time.minute,                # Minuto
+                        current_time.strftime("%A"),        # Día de la semana
+                        'SHORT',                            # Tipo operación
+                        order.executed.price,               # Punto entrada
+                        stop_loss,                          # Stop Loss
+                        take_profit,                        # Take Profit
+                        rr_ratio,                           # R:R Ratio
+                        '',                                 # Precio cierre (se llenará después)
+                        '',                                 # Fecha cierre (se llenará después)
+                        '',                                 # Hora cierre (se llenará después)
+                        '',                                 # Resultado (se llenará después)
+                        '',                                 # P&L Bruto (se llenará después)
+                        '',                                 # P&L Neto (se llenará después)
+                        '',                                 # ROI % (se llenará después)
+                        '',                                 # Tipo cierre (se llenará después)
+                        '',                                 # Duración minutos (se llenará después)
+                        False,                              # Trailing Stop Breakeven
+                        False                               # Trailing Stop Profit
+                    ])
                 else:
                     self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
         
@@ -451,10 +665,11 @@ class ICCStrategy(bt.Strategy):
     
     def notify_trade(self, trade):
         """Notificar cambios en trades"""
-        print(f"   📊 Notificación de trade: Cerrado={trade.isclosed}, P&L={trade.pnlcomm:.2f}")
-        print(f"   📊 Trade info: Size={trade.size}, Price={trade.price:.5f}")
+        current_time = self.data.datetime.datetime(0)
         
         if not trade.isclosed:
+            print(f"   📊 Notificación de trade: Cerrado={trade.isclosed}, P&L={trade.pnlcomm:.2f}")
+            print(f"   📊 Trade info: Size={trade.size}, Price={trade.price:.5f}")
             print(f"   ⏳ Trade aún abierto, esperando cierre...")
             return
         
@@ -488,6 +703,27 @@ class ICCStrategy(bt.Strategy):
         result = "GANADORA" if pnlcomm > 0 else "PERDEDORA"
         self.log(f'📊 TRADE CERRADO - {close_type} - {result} - P&L: {pnlcomm:.2f}')
         
+        # Actualizar el último trade en el CSV con información de cierre
+        if self.trades_csv_data:
+            last_trade = self.trades_csv_data[-1]
+            # Calcular duración en minutos
+            entry_time = pd.to_datetime(f"{last_trade[0]} {last_trade[1]}")
+            close_time = current_time
+            duration_minutes = int((close_time - entry_time).total_seconds() / 60)
+            
+            # Actualizar campos de cierre
+            last_trade[9] = current_price      # Precio cierre
+            last_trade[10] = close_time.strftime("%Y-%m-%d")  # Fecha cierre
+            last_trade[11] = close_time.strftime("%H:%M:%S")  # Hora cierre
+            last_trade[12] = result            # Resultado
+            last_trade[13] = pnl               # P&L Bruto
+            last_trade[14] = pnlcomm           # P&L Neto
+            last_trade[15] = roi               # ROI %
+            last_trade[16] = close_type        # Tipo cierre
+            last_trade[17] = duration_minutes  # Duración minutos
+            last_trade[18] = self.trailing_stop_breakeven  # Trailing Stop Breakeven
+            last_trade[19] = self.trailing_stop_profit     # Trailing Stop Profit
+        
         # MOSTRAR INFORMACIÓN DETALLADA DEL CIERRE DE TRADE
         print(f"   📊 INFORMACIÓN DETALLADA DEL CIERRE:")
         print(f"   " + "="*50)
@@ -495,9 +731,14 @@ class ICCStrategy(bt.Strategy):
         print(f"   💰 PRECIO DE ENTRADA: {trade.price:.5f}")
         print(f"   💰 PRECIO DE CIERRE: {current_price:.5f}")
         print(f"   📊 TIPO DE CIERRE: {close_type}")
-        print(f"   💰 P&L: {pnlcomm:.2f}")
+        print(f"   💰 P&L BRUTO: {pnl:.2f}")
+        print(f"   💰 P&L NETO (con comisiones): {pnlcomm:.2f}")
         print(f"   📈 ROI: {roi:.2f}%")
-        print(f"   📅 FECHA/HORA CIERRE: {self.data.datetime.datetime(0)}")
+        print(f"   📅 FECHA/HORA CIERRE: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        if pnlcomm > 0:
+            print(f"   🎉 GANANCIA: +{pnlcomm:.2f}")
+        else:
+            print(f"   📉 PÉRDIDA: {pnlcomm:.2f}")
         print(f"   " + "="*50)
         
         # Actualizar contadores
@@ -583,6 +824,9 @@ class ICCStrategy(bt.Strategy):
             print(f"      • Tasa de éxito: {win_rate:.1f}%")
         
         print(f"   📊 Contador de trades al final: {self.trade_count}")
+        
+        # Guardar CSV de trades
+        self.save_trades_csv()
         
         if self.trade_count > 0:
             win_rate = (self.win_count / self.trade_count) * 100
