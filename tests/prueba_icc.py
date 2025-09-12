@@ -34,9 +34,6 @@ except ImportError as e:
 # Importar la librería de análisis de mercado
 from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 
-# Generación de imágenes deshabilitada
-print("📊 Modo de visualización: Solo texto (sin generación de imágenes)")
-
 class ICCStrategy(bt.Strategy):
     """Estrategia ICC SmartMoney con Backtrader"""
     
@@ -99,8 +96,9 @@ class ICCStrategy(bt.Strategy):
         self.df_1h = df_1h  # Usar los datos pasados desde run_backtest
         self.df_4h = df_4h  # Usar los datos pasados desde run_backtest
         
-        # Variables para gestión de riesgo ICC
-        self.current_position_info = None  # Almacenar info de la posición actual
+        # Variables para gestión de riesgo ICC - Múltiples posiciones
+        self.active_positions = []  # Lista de posiciones activas
+        self.current_position_info = None  # Mantener para compatibilidad
         self.stop_loss_level = None
         self.take_profit_levels = None
         
@@ -113,7 +111,6 @@ class ICCStrategy(bt.Strategy):
         print(f"   🎯 Mínimo R:R requerido: 1:1")
         print(f"   📊 Modo de visualización: Solo texto")
         print(f"      • Mostrar puntos de entrada, profit y loss")
-        print(f"      • Sin generación de imágenes")
         
     def log(self, txt, dt=None):
         """Función de logging"""
@@ -163,7 +160,8 @@ class ICCStrategy(bt.Strategy):
         # Mostrar progreso cada 200 velas
         if self.current_bar % 200 == 0:
             current_time = self.data.datetime.datetime(0)
-            print(f"   📊 Procesando vela {self.current_bar}/{self.total_bars} - {current_time}")
+            active_count = len(self.active_positions)
+            print(f"   📊 Procesando vela {self.current_bar}/{self.total_bars} - {current_time} - Posiciones activas: {active_count}")
         
         # Solo operar si no hay órdenes pendientes
         if self.order:
@@ -180,11 +178,10 @@ class ICCStrategy(bt.Strategy):
         }
         self.data_buffer.append(current_candle)
         
-        # Verificar si ya tenemos una posición abierta
+        # GESTIÓN DE RIESGO ICC - Verificar Stop Loss y Take Profit para posiciones existentes
         if self.position:
-            # GESTIÓN DE RIESGO ICC - Verificar Stop Loss y Take Profit
             self.check_icc_risk_management()
-            return
+            # NO RETORNAR - Continuar procesando nuevas señales para múltiples operaciones
         
         # Verificar que tenemos suficientes datos para análisis SmartMoney
         if len(self.data_buffer) < 100:  # Necesitamos al menos 100 velas
@@ -249,14 +246,23 @@ class ICCStrategy(bt.Strategy):
                             continue
                         
                         # Almacenar información de la posición para gestión de riesgo
-                        self.current_position_info = {
+                        position_info = {
                             'direction': direction,
                             'entry_price': entry_price,
                             'stop_loss': stop_loss,
                             'take_profit': take_profit,  # UN SOLO TP ESTRUCTURAL
                             'risk_reward_ratio': risk_reward_ratio,
-                            'structural_levels': structural_levels
+                            'structural_levels': structural_levels,
+                            'trailing_breakeven': False,
+                            'trailing_profit': False,
+                            'entry_time': self.data.datetime.datetime(0)
                         }
+                        
+                        # Agregar a la lista de posiciones activas
+                        self.active_positions.append(position_info)
+                        
+                        # Mantener compatibilidad con el sistema anterior
+                        self.current_position_info = position_info
                         
                         # Reiniciar variables de trailing stop para nueva posición
                         self.trailing_stop_breakeven = False
@@ -273,6 +279,31 @@ class ICCStrategy(bt.Strategy):
                         print(f"   🔍 FUENTE: {signal.get('source', 'ICC')}")
                         print(f"   📅 FECHA/HORA: {self.data.datetime.datetime(0)}")
                         print(f"   " + "="*60)
+                        
+                        # REGISTRAR SEÑAL EN CSV INMEDIATAMENTE (independientemente de si se ejecuta la orden)
+                        current_time = self.data.datetime.datetime(0)
+                        self.add_trade_to_csv([
+                            current_time.strftime("%Y-%m-%d"),  # Fecha
+                            current_time.strftime("%H:%M:%S"),  # Hora
+                            current_time.minute,                # Minuto
+                            current_time.strftime("%A"),        # Día de la semana
+                            direction,                          # Tipo operación
+                            entry_price,                        # Punto entrada
+                            stop_loss,                          # Stop Loss
+                            take_profit,                        # Take Profit
+                            risk_reward_ratio,                  # R:R Ratio
+                            '',                                 # Precio cierre (se llenará después)
+                            '',                                 # Fecha cierre (se llenará después)
+                            '',                                 # Hora cierre (se llenará después)
+                            '',                                 # Resultado (se llenará después)
+                            '',                                 # P&L Bruto (se llenará después)
+                            '',                                 # P&L Neto (se llenará después)
+                            '',                                 # ROI % (se llenará después)
+                            '',                                 # Tipo cierre (se llenará después)
+                            '',                                 # Duración minutos (se llenará después)
+                            False,                              # Trailing Stop Breakeven
+                            False                               # Trailing Stop Profit
+                        ])
                         
                         # Mostrar niveles estructurales si están disponibles
                         if structural_levels:
@@ -303,114 +334,333 @@ class ICCStrategy(bt.Strategy):
                 self.log(f"⚠️ Error en análisis SmartMoney: {e}")
                 pass
     
-    def check_icc_risk_management(self):
-        """Verificar Stop Loss y Take Profit basado en gestión de riesgo ICC con Trailing Stop"""
-        if not self.current_position_info:
-            return
-            
-        current_price = self.data.close[0]
-        direction = self.current_position_info['direction']
-        entry_price = self.current_position_info['entry_price']
-        stop_loss = self.current_position_info['stop_loss']
-        
-        # Obtener Take Profit estructural ÚNICO
-        take_profit = self.current_position_info.get('take_profit')
-        rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
-        
+    def check_single_position_risk(self, current_price, direction, entry_price, stop_loss, take_profit, rr_ratio, trailing_breakeven, trailing_profit, position):
+        """Verificar riesgo para una sola posición"""
         # Calcular distancia desde entrada
         if direction == 'LONG':
             distance_to_profit = take_profit - entry_price if take_profit else 0
             distance_to_sl = entry_price - stop_loss
             current_profit_distance = current_price - entry_price
             
-            # Debug: Verificar que las distancias sean correctas
-            if distance_to_profit <= distance_to_sl:
-                self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
-                self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
-                self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
-            
             # TRAILING STOP LOGIC
             # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
-            if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
-                # Mover SL al punto de entrada (breakeven) con un pequeño margen
-                new_sl = entry_price + (distance_to_sl * 0.1)  # 10% del riesgo original como margen
-                self.current_position_info['stop_loss'] = new_sl
-                self.trailing_stop_breakeven = True
+            if not trailing_breakeven and current_profit_distance >= distance_to_sl:
+                new_sl = entry_price + (distance_to_sl * 0.1)
+                position['stop_loss'] = new_sl
+                position['trailing_breakeven'] = True
                 self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
             
-            # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
-            elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
-                  current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
-                # Mover SL para asegurar ganancia de al menos 1:1
-                new_sl = entry_price + distance_to_sl  # Asegurar ganancia 1:1
-                self.current_position_info['stop_loss'] = new_sl
-                self.trailing_stop_profit = True
+            # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima
+            elif (not trailing_profit and rr_ratio >= 2.0 and 
+                  current_profit_distance >= distance_to_sl * 1.8):
+                new_sl = entry_price + distance_to_sl
+                position['stop_loss'] = new_sl
+                position['trailing_profit'] = True
                 self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
             
-            # Verificar Stop Loss (precio por debajo del SL)
-            if current_price <= self.current_position_info['stop_loss']:
-                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
-                self.close()
-                self.current_position_info = None
-                self.trailing_stop_breakeven = False
-                self.trailing_stop_profit = False
-                return
+            # Verificar Stop Loss
+            if current_price <= position['stop_loss']:
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {position['stop_loss']:.5f}")
+                return True
                 
-            # Verificar Take Profit estructural ÚNICO
+            # Verificar Take Profit
             if take_profit and current_price >= take_profit:
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
-                self.close()
-                self.current_position_info = None
-                self.trailing_stop_breakeven = False
-                self.trailing_stop_profit = False
-                return
+                return True
                 
         elif direction == 'SHORT':
             distance_to_profit = entry_price - take_profit if take_profit else 0
             distance_to_sl = stop_loss - entry_price
             current_profit_distance = entry_price - current_price
             
-            # Debug: Verificar que las distancias sean correctas
-            if distance_to_profit <= distance_to_sl:
-                self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
-                self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
-                self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
-            
             # TRAILING STOP LOGIC
-            # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
-            if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
-                # Mover SL al punto de entrada (breakeven) con un pequeño margen
-                new_sl = entry_price - (distance_to_sl * 0.1)  # 10% del riesgo original como margen
-                self.current_position_info['stop_loss'] = new_sl
-                self.trailing_stop_breakeven = True
+            if not trailing_breakeven and current_profit_distance >= distance_to_sl:
+                new_sl = entry_price - (distance_to_sl * 0.1)
+                position['stop_loss'] = new_sl
+                position['trailing_breakeven'] = True
                 self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
             
-            # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
-            elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
-                  current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
-                # Mover SL para asegurar ganancia de al menos 1:1
-                new_sl = entry_price - distance_to_sl  # Asegurar ganancia 1:1
-                self.current_position_info['stop_loss'] = new_sl
-                self.trailing_stop_profit = True
+            elif (not trailing_profit and rr_ratio >= 2.0 and 
+                  current_profit_distance >= distance_to_sl * 1.8):
+                new_sl = entry_price - distance_to_sl
+                position['stop_loss'] = new_sl
+                position['trailing_profit'] = True
                 self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
             
-            # Verificar Stop Loss (precio por encima del SL)
-            if current_price >= self.current_position_info['stop_loss']:
-                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
-                self.close()
-                self.current_position_info = None
-                self.trailing_stop_breakeven = False
-                self.trailing_stop_profit = False
-                return
+            # Verificar Stop Loss
+            if current_price >= position['stop_loss']:
+                self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {position['stop_loss']:.5f}")
+                return True
                 
-            # Verificar Take Profit estructural ÚNICO
+            # Verificar Take Profit
             if take_profit and current_price <= take_profit:
                 self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
+                return True
+        
+        return False
+    
+    def update_csv_with_close_info(self, position, close_price):
+        """Actualizar el CSV con información de cierre de una posición"""
+        if not self.trades_csv_data:
+            return
+        
+        # Buscar la entrada correspondiente en el CSV
+        # Buscar desde el final hacia atrás para encontrar la entrada más reciente que coincida
+        found_match = False
+        for i in range(len(self.trades_csv_data) - 1, -1, -1):
+            trade = self.trades_csv_data[i]
+            
+            # Verificar si es una entrada que coincide y no está cerrada
+            if (trade[4] == position['direction'] and  # Misma dirección
+                trade[9] == ''):  # Aún no cerrado
+                
+                # Verificar si el precio de entrada coincide (con tolerancia)
+                entry_price_diff = abs(float(trade[5]) - position['entry_price'])
+                if entry_price_diff < 0.0001:  # Tolerancia de 1 pip
+                    
+                    # Calcular métricas de cierre
+                    entry_time = pd.to_datetime(f"{trade[0]} {trade[1]}")
+                    close_time = self.data.datetime.datetime(0)
+                    duration_minutes = int((close_time - entry_time).total_seconds() / 60)
+                    
+                    # Calcular P&L
+                    if position['direction'] == 'LONG':
+                        pnl = close_price - position['entry_price']
+                    else:  # SHORT
+                        pnl = position['entry_price'] - close_price
+                    
+                    # Determinar tipo de cierre
+                    close_type = "MANUAL"
+                    if position['direction'] == 'LONG':
+                        if close_price <= position['stop_loss']:
+                            close_type = "STOP LOSS"
+                        elif position.get('take_profit') and close_price >= position['take_profit']:
+                            close_type = "TAKE PROFIT ESTRUCTURAL"
+                    else:  # SHORT
+                        if close_price >= position['stop_loss']:
+                            close_type = "STOP LOSS"
+                        elif position.get('take_profit') and close_price <= position['take_profit']:
+                            close_type = "TAKE PROFIT ESTRUCTURAL"
+                    
+                    # Actualizar campos de cierre
+                    trade[9] = close_price                    # Precio cierre
+                    trade[10] = close_time.strftime("%Y-%m-%d")  # Fecha cierre
+                    trade[11] = close_time.strftime("%H:%M:%S")  # Hora cierre
+                    trade[12] = "GANADORA" if pnl > 0 else "PERDEDORA"  # Resultado
+                    trade[13] = pnl                          # P&L Bruto
+                    trade[14] = pnl                          # P&L Neto (sin comisiones por simplicidad)
+                    trade[15] = (pnl / position['entry_price']) * 100 if position['entry_price'] > 0 else 0  # ROI %
+                    trade[16] = close_type                   # Tipo cierre
+                    trade[17] = duration_minutes             # Duración minutos
+                    trade[18] = position.get('trailing_breakeven', False)  # Trailing Stop Breakeven
+                    trade[19] = position.get('trailing_profit', False)     # Trailing Stop Profit
+                    
+                    found_match = True
+                    self.log(f"✅ CSV actualizado para posición {position['direction']} - Entrada: {position['entry_price']:.5f}, Cierre: {close_price:.5f}")
+                    break
+        
+        if not found_match:
+            self.log(f"⚠️ No se encontró entrada en CSV para posición {position['direction']} - Entrada: {position['entry_price']:.5f}")
+            # Agregar entrada manual si no se encuentra
+            current_time = self.data.datetime.datetime(0)
+            self.add_trade_to_csv([
+                current_time.strftime("%Y-%m-%d"),  # Fecha
+                current_time.strftime("%H:%M:%S"),  # Hora
+                current_time.minute,                # Minuto
+                current_time.strftime("%A"),        # Día de la semana
+                position['direction'],              # Tipo operación
+                position['entry_price'],            # Punto entrada
+                position['stop_loss'],              # Stop Loss
+                position.get('take_profit', ''),    # Take Profit
+                position.get('risk_reward_ratio', 0),  # R:R Ratio
+                close_price,                        # Precio cierre
+                current_time.strftime("%Y-%m-%d"),  # Fecha cierre
+                current_time.strftime("%H:%M:%S"),  # Hora cierre
+                "GANADORA" if (close_price - position['entry_price'] if position['direction'] == 'LONG' else position['entry_price'] - close_price) > 0 else "PERDEDORA",  # Resultado
+                close_price - position['entry_price'] if position['direction'] == 'LONG' else position['entry_price'] - close_price,  # P&L Bruto
+                close_price - position['entry_price'] if position['direction'] == 'LONG' else position['entry_price'] - close_price,  # P&L Neto
+                ((close_price - position['entry_price'] if position['direction'] == 'LONG' else position['entry_price'] - close_price) / position['entry_price']) * 100 if position['entry_price'] > 0 else 0,  # ROI %
+                "MANUAL",                           # Tipo cierre
+                0,                                  # Duración minutos
+                position.get('trailing_breakeven', False),  # Trailing Stop Breakeven
+                position.get('trailing_profit', False)      # Trailing Stop Profit
+            ])
+    
+    def close_all_open_entries_in_csv(self, close_price):
+        """Cerrar todas las entradas abiertas en el CSV que no tengan información de cierre"""
+        if not self.trades_csv_data:
+            return
+        
+        current_time = self.data.datetime.datetime(0)
+        closed_count = 0
+        
+        for trade in self.trades_csv_data:
+            # Si la entrada no tiene precio de cierre, cerrarla
+            if trade[9] == '':  # Precio cierre vacío
+                entry_time = pd.to_datetime(f"{trade[0]} {trade[1]}")
+                duration_minutes = int((current_time - entry_time).total_seconds() / 60)
+                
+                # Calcular P&L
+                entry_price = float(trade[5])
+                if trade[4] == 'LONG':
+                    pnl = close_price - entry_price
+                else:  # SHORT
+                    pnl = entry_price - close_price
+                
+                # Actualizar campos de cierre
+                trade[9] = close_price                    # Precio cierre
+                trade[10] = current_time.strftime("%Y-%m-%d")  # Fecha cierre
+                trade[11] = current_time.strftime("%H:%M:%S")  # Hora cierre
+                trade[12] = "GANADORA" if pnl > 0 else "PERDEDORA"  # Resultado
+                trade[13] = pnl                          # P&L Bruto
+                trade[14] = pnl                          # P&L Neto
+                trade[15] = (pnl / entry_price) * 100 if entry_price > 0 else 0  # ROI %
+                trade[16] = "CIERRE MANUAL (Final)"      # Tipo cierre
+                trade[17] = duration_minutes             # Duración minutos
+                trade[18] = False                        # Trailing Stop Breakeven
+                trade[19] = False                        # Trailing Stop Profit
+                
+                closed_count += 1
+        
+        if closed_count > 0:
+            self.log(f"🔚 Se cerraron {closed_count} entradas abiertas al final del backtesting")
+    
+    def check_icc_risk_management(self):
+        """Verificar Stop Loss y Take Profit basado en gestión de riesgo ICC con Trailing Stop para múltiples posiciones"""
+        if not self.active_positions and not self.current_position_info:
+            return
+            
+        current_price = self.data.close[0]
+        
+        # Procesar posiciones activas (nuevo sistema)
+        positions_to_remove = []
+        for i, position in enumerate(self.active_positions):
+            direction = position['direction']
+            entry_price = position['entry_price']
+            stop_loss = position['stop_loss']
+            take_profit = position.get('take_profit')
+            rr_ratio = position.get('risk_reward_ratio', 0)
+            trailing_breakeven = position.get('trailing_breakeven', False)
+            trailing_profit = position.get('trailing_profit', False)
+            
+            should_close = self.check_single_position_risk(
+                current_price, direction, entry_price, stop_loss, take_profit, 
+                rr_ratio, trailing_breakeven, trailing_profit, position
+            )
+            
+            if should_close:
+                # Actualizar CSV con información de cierre antes de remover
+                self.update_csv_with_close_info(position, current_price)
+                # Cerrar la posición en Backtrader
                 self.close()
-                self.current_position_info = None
-                self.trailing_stop_breakeven = False
-                self.trailing_stop_profit = False
-                return
+                positions_to_remove.append(i)
+        
+        # Remover posiciones cerradas (en orden inverso para no afectar índices)
+        for i in reversed(positions_to_remove):
+            self.active_positions.pop(i)
+        
+        # Mantener compatibilidad con el sistema anterior (solo si no hay posiciones activas)
+        if self.current_position_info and not self.active_positions:
+            direction = self.current_position_info['direction']
+            entry_price = self.current_position_info['entry_price']
+            stop_loss = self.current_position_info['stop_loss']
+            take_profit = self.current_position_info.get('take_profit')
+            rr_ratio = self.current_position_info.get('risk_reward_ratio', 0)
+            
+            # Calcular distancia desde entrada
+            if direction == 'LONG':
+                distance_to_profit = take_profit - entry_price if take_profit else 0
+                distance_to_sl = entry_price - stop_loss
+                current_profit_distance = current_price - entry_price
+                
+                # Debug: Verificar que las distancias sean correctas
+                if distance_to_profit <= distance_to_sl:
+                    self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
+                    self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
+                    self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
+                
+                # TRAILING STOP LOGIC
+                # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
+                if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
+                    # Mover SL al punto de entrada (breakeven) con un pequeño margen
+                    new_sl = entry_price + (distance_to_sl * 0.1)  # 10% del riesgo original como margen
+                    self.current_position_info['stop_loss'] = new_sl
+                    self.trailing_stop_breakeven = True
+                    self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
+                
+                # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
+                elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
+                      current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
+                    # Mover SL para asegurar ganancia de al menos 1:1
+                    new_sl = entry_price + distance_to_sl  # Asegurar ganancia 1:1
+                    self.current_position_info['stop_loss'] = new_sl
+                    self.trailing_stop_profit = True
+                    self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
+                
+                # Verificar Stop Loss (precio por debajo del SL)
+                if current_price <= self.current_position_info['stop_loss']:
+                    self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
+                    self.close()
+                    self.current_position_info = None
+                    self.trailing_stop_breakeven = False
+                    self.trailing_stop_profit = False
+                    return
+                    
+                # Verificar Take Profit estructural ÚNICO
+                if take_profit and current_price >= take_profit:
+                    self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
+                    self.close()
+                    self.current_position_info = None
+                    self.trailing_stop_breakeven = False
+                    self.trailing_stop_profit = False
+                    return
+                    
+            elif direction == 'SHORT':
+                distance_to_profit = entry_price - take_profit if take_profit else 0
+                distance_to_sl = stop_loss - entry_price
+                current_profit_distance = entry_price - current_price
+                
+                # Debug: Verificar que las distancias sean correctas
+                if distance_to_profit <= distance_to_sl:
+                    self.log(f"⚠️ ADVERTENCIA: Distancia al TP ({distance_to_profit:.5f}) <= Distancia al SL ({distance_to_sl:.5f})")
+                    self.log(f"   Entrada: {entry_price:.5f}, SL: {stop_loss:.5f}, TP: {take_profit:.5f}")
+                    self.log(f"   R:R reportado: {rr_ratio:.2f}, R:R real: {distance_to_profit/distance_to_sl:.2f}")
+                
+                # TRAILING STOP LOGIC
+                # 1. Mover SL al breakeven cuando el precio avance la misma distancia que el riesgo inicial
+                if not self.trailing_stop_breakeven and current_profit_distance >= distance_to_sl:
+                    # Mover SL al punto de entrada (breakeven) con un pequeño margen
+                    new_sl = entry_price - (distance_to_sl * 0.1)  # 10% del riesgo original como margen
+                    self.current_position_info['stop_loss'] = new_sl
+                    self.trailing_stop_breakeven = True
+                    self.log(f"🔄 TRAILING STOP: SL movido al breakeven - Nuevo SL: {new_sl:.5f}")
+                
+                # 2. Para R:R >= 1:2, mover SL para asegurar ganancia mínima cuando esté cerca de 1:2
+                elif (not self.trailing_stop_profit and rr_ratio >= 2.0 and 
+                      current_profit_distance >= distance_to_sl * 1.8):  # 90% del camino a 1:2
+                    # Mover SL para asegurar ganancia de al menos 1:1
+                    new_sl = entry_price - distance_to_sl  # Asegurar ganancia 1:1
+                    self.current_position_info['stop_loss'] = new_sl
+                    self.trailing_stop_profit = True
+                    self.log(f"🔄 TRAILING STOP: SL movido para asegurar ganancia 1:1 - Nuevo SL: {new_sl:.5f}")
+                
+                # Verificar Stop Loss (precio por encima del SL)
+                if current_price >= self.current_position_info['stop_loss']:
+                    self.log(f"🛑 STOP LOSS alcanzado - Precio: {current_price:.5f}, SL: {self.current_position_info['stop_loss']:.5f}")
+                    self.close()
+                    self.current_position_info = None
+                    self.trailing_stop_breakeven = False
+                    self.trailing_stop_profit = False
+                    return
+                    
+                # Verificar Take Profit estructural ÚNICO
+                if take_profit and current_price <= take_profit:
+                    self.log(f"🎯 TAKE PROFIT ESTRUCTURAL alcanzado - Precio: {current_price:.5f}, TP: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})")
+                    self.close()
+                    self.current_position_info = None
+                    self.trailing_stop_breakeven = False
+                    self.trailing_stop_profit = False
+                    return
     
     def validate_structural_take_profit(self, entry_price, take_profit, direction, df_1h, df_4h):
         """
@@ -592,29 +842,12 @@ class ICCStrategy(bt.Strategy):
                     self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
                     self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
                     
-                    # Agregar trade al CSV
-                    self.add_trade_to_csv([
-                        current_time.strftime("%Y-%m-%d"),  # Fecha
-                        current_time.strftime("%H:%M:%S"),  # Hora
-                        current_time.minute,                # Minuto
-                        current_time.strftime("%A"),        # Día de la semana
-                        'LONG',                             # Tipo operación
-                        order.executed.price,               # Punto entrada
-                        stop_loss,                          # Stop Loss
-                        take_profit,                        # Take Profit
-                        rr_ratio,                           # R:R Ratio
-                        '',                                 # Precio cierre (se llenará después)
-                        '',                                 # Fecha cierre (se llenará después)
-                        '',                                 # Hora cierre (se llenará después)
-                        '',                                 # Resultado (se llenará después)
-                        '',                                 # P&L Bruto (se llenará después)
-                        '',                                 # P&L Neto (se llenará después)
-                        '',                                 # ROI % (se llenará después)
-                        '',                                 # Tipo cierre (se llenará después)
-                        '',                                 # Duración minutos (se llenará después)
-                        False,                              # Trailing Stop Breakeven
-                        False                               # Trailing Stop Profit
-                    ])
+                    # NO agregar trade al CSV aquí - ya se registró cuando se detectó la señal
+                    # Solo actualizar el precio de entrada real si es diferente
+                    if self.trades_csv_data:
+                        last_trade = self.trades_csv_data[-1]
+                        if last_trade[4] == 'LONG':  # Verificar que es la misma operación
+                            last_trade[5] = order.executed.price  # Actualizar precio de entrada real
                 else:
                     self.log(f'🟢 COMPRA EJECUTADA - Precio: {order.executed.price:.5f}')
             else:
@@ -632,29 +865,12 @@ class ICCStrategy(bt.Strategy):
                     self.log(f'   🛑 Stop Loss: {stop_loss:.5f}')
                     self.log(f'   🎯 Take Profit Estructural: {take_profit:.5f} (R:R 1:{rr_ratio:.2f})')
                     
-                    # Agregar trade al CSV
-                    self.add_trade_to_csv([
-                        current_time.strftime("%Y-%m-%d"),  # Fecha
-                        current_time.strftime("%H:%M:%S"),  # Hora
-                        current_time.minute,                # Minuto
-                        current_time.strftime("%A"),        # Día de la semana
-                        'SHORT',                            # Tipo operación
-                        order.executed.price,               # Punto entrada
-                        stop_loss,                          # Stop Loss
-                        take_profit,                        # Take Profit
-                        rr_ratio,                           # R:R Ratio
-                        '',                                 # Precio cierre (se llenará después)
-                        '',                                 # Fecha cierre (se llenará después)
-                        '',                                 # Hora cierre (se llenará después)
-                        '',                                 # Resultado (se llenará después)
-                        '',                                 # P&L Bruto (se llenará después)
-                        '',                                 # P&L Neto (se llenará después)
-                        '',                                 # ROI % (se llenará después)
-                        '',                                 # Tipo cierre (se llenará después)
-                        '',                                 # Duración minutos (se llenará después)
-                        False,                              # Trailing Stop Breakeven
-                        False                               # Trailing Stop Profit
-                    ])
+                    # NO agregar trade al CSV aquí - ya se registró cuando se detectó la señal
+                    # Solo actualizar el precio de entrada real si es diferente
+                    if self.trades_csv_data:
+                        last_trade = self.trades_csv_data[-1]
+                        if last_trade[4] == 'SHORT':  # Verificar que es la misma operación
+                            last_trade[5] = order.executed.price  # Actualizar precio de entrada real
                 else:
                     self.log(f'🔴 VENTA EJECUTADA - Precio: {order.executed.price:.5f}')
         
@@ -776,16 +992,21 @@ class ICCStrategy(bt.Strategy):
     def stop(self):
         """Método llamado al final del backtesting"""
         # Cerrar cualquier posición abierta al final del backtesting
-        if self.position:
+        current_price = self.data.close[0]
+        
+        # Cerrar posiciones activas
+        for position in self.active_positions:
             self.log(f'🔚 Cerrando posición abierta al final del backtesting')
-            self.log(f'   📊 Posición actual: Size={self.position.size}, Price={self.position.price:.5f}')
+            self.log(f'   📊 Posición: {position["direction"]} - Entrada: {position["entry_price"]:.5f}')
             
-            # Calcular P&L de la posición abierta
-            current_price = self.data.close[0]
-            if self.position.size > 0:  # LONG
-                pnl = (current_price - self.position.price) * self.position.size
+            # Actualizar CSV con cierre manual
+            self.update_csv_with_close_info(position, current_price)
+            
+            # Calcular P&L
+            if position['direction'] == 'LONG':
+                pnl = current_price - position['entry_price']
             else:  # SHORT
-                pnl = (self.position.price - current_price) * abs(self.position.size)
+                pnl = position['entry_price'] - current_price
             
             # Contar como trade cerrado manualmente
             self.trade_count += 1
@@ -801,21 +1022,42 @@ class ICCStrategy(bt.Strategy):
             # MOSTRAR INFORMACIÓN DEL CIERRE MANUAL AL FINAL DEL BACKTESTING
             print(f"   📊 INFORMACIÓN DEL CIERRE MANUAL:")
             print(f"   " + "="*50)
-            print(f"   🎯 DIRECCIÓN: {'LONG' if self.position.size > 0 else 'SHORT'}")
-            print(f"   💰 PRECIO DE ENTRADA: {self.position.price:.5f}")
+            print(f"   🎯 DIRECCIÓN: {position['direction']}")
+            print(f"   💰 PRECIO DE ENTRADA: {position['entry_price']:.5f}")
             print(f"   💰 PRECIO DE CIERRE: {current_price:.5f}")
             print(f"   📊 TIPO DE CIERRE: CIERRE MANUAL (Final del backtesting)")
             print(f"   💰 P&L: {pnl:.2f}")
             print(f"   📅 FECHA/HORA CIERRE: {self.data.datetime.datetime(0)}")
             print(f"   " + "="*50)
-            
+        
+        # Cerrar todas las entradas abiertas en el CSV que no tengan información de cierre
+        self.close_all_open_entries_in_csv(current_price)
+        
+        # Cerrar posición de Backtrader si existe
+        if self.position:
             self.close()
             
         # Limpiar información de gestión de riesgo
         self.current_position_info = None
         
-        # Resumen de operaciones ejecutadas
-        print(f"   📊 RESUMEN DE OPERACIONES EJECUTADAS:")
+        # Guardar CSV de trades
+        self.save_trades_csv()
+        
+        # Calcular estadísticas del CSV (todas las señales detectadas)
+        csv_wins = 0
+        csv_losses = 0
+        csv_total = 0
+        
+        for trade in self.trades_csv_data:
+            if trade[12] in ['GANADORA', 'PERDEDORA']:  # Solo contar trades cerrados
+                csv_total += 1
+                if trade[12] == 'GANADORA':
+                    csv_wins += 1
+                else:
+                    csv_losses += 1
+        
+        # Resumen de operaciones ejecutadas (Backtrader)
+        print(f"   📊 RESUMEN DE OPERACIONES EJECUTADAS (BACKTRADER):")
         print(f"      • Total de operaciones: {self.trade_count}")
         print(f"      • Operaciones ganadoras: {self.win_count}")
         print(f"      • Operaciones perdedoras: {self.loss_count}")
@@ -823,19 +1065,27 @@ class ICCStrategy(bt.Strategy):
             win_rate = (self.win_count / self.trade_count) * 100
             print(f"      • Tasa de éxito: {win_rate:.1f}%")
         
+        # Resumen de todas las señales detectadas (CSV)
+        print(f"   📊 RESUMEN DE TODAS LAS SEÑALES DETECTADAS (CSV):")
+        print(f"      • Total de señales: {len(self.trades_csv_data)}")
+        print(f"      • Señales cerradas: {csv_total}")
+        print(f"      • Señales ganadoras: {csv_wins}")
+        print(f"      • Señales perdedoras: {csv_losses}")
+        if csv_total > 0:
+            csv_win_rate = (csv_wins / csv_total) * 100
+            print(f"      • Tasa de éxito: {csv_win_rate:.1f}%")
+        
         print(f"   📊 Contador de trades al final: {self.trade_count}")
         
-        # Guardar CSV de trades
-        self.save_trades_csv()
-        
-        if self.trade_count > 0:
-            win_rate = (self.win_count / self.trade_count) * 100
-            self.log(f'🏁 BACKTESTING COMPLETADO - {self.trade_count} operaciones - {win_rate:.1f}% éxito')
-            print(f"   📊 RESUMEN DE OPERACIONES:")
-            print(f"      • Total de operaciones: {self.trade_count}")
-            print(f"      • Operaciones ganadoras: {self.win_count}")
-            print(f"      • Operaciones perdedoras: {self.loss_count}")
-            print(f"      • Tasa de éxito: {win_rate:.1f}%")
+        if csv_total > 0:
+            csv_win_rate = (csv_wins / csv_total) * 100
+            self.log(f'🏁 BACKTESTING COMPLETADO - {csv_total} señales procesadas - {csv_win_rate:.1f}% éxito')
+            print(f"   📊 RESUMEN FINAL:")
+            print(f"      • Total de señales detectadas: {len(self.trades_csv_data)}")
+            print(f"      • Señales cerradas: {csv_total}")
+            print(f"      • Señales ganadoras: {csv_wins}")
+            print(f"      • Señales perdedoras: {csv_losses}")
+            print(f"      • Tasa de éxito: {csv_win_rate:.1f}%")
             
             # Mostrar resumen de señales ICC
             if hasattr(self, 'smartmoney_icc') and hasattr(self.smartmoney_icc, 'signals'):
@@ -848,12 +1098,13 @@ class ICCStrategy(bt.Strategy):
                     print(f"      • Señales LONG: {long_signals}")
                     print(f"      • Señales SHORT: {short_signals}")
         else:
-            self.log(f'🏁 BACKTESTING COMPLETADO - Sin operaciones')
-            print(f"   📊 RESUMEN: No se ejecutaron operaciones")
+            self.log(f'🏁 BACKTESTING COMPLETADO - Sin operaciones ejecutadas en Backtrader')
+            print(f"   📊 RESUMEN: No se ejecutaron operaciones en Backtrader")
             print(f"      • Posibles causas:")
             print(f"         - Las señales no cumplieron el R:R mínimo")
             print(f"         - No se detectaron señales ICC válidas")
             print(f"         - Las órdenes no se ejecutaron correctamente")
+            print(f"      • Pero se detectaron {len(self.trades_csv_data)} señales en total")
 
 def load_data():
     """Cargar datos de EURUSD de múltiples timeframes como en smart01.py"""
