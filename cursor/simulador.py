@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-simulador.py
-Comparación de 3 estrategias (Buy&Hold, cruces MAs, HMM) sobre SPY.
-"""
-
-import os
-# (Opcional) silenciar warning de joblib/loky
-os.environ["LOKY_MAX_CPU_COUNT"] = str(os.cpu_count() or 4)
-
+# Importar librerías
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -15,136 +7,108 @@ from hmmlearn import hmm
 import matplotlib.pyplot as plt
 
 
-def descargar_datos(ticker="SPY", start="2019-01-01", end="2024-01-01"):
-    # Evita FutureWarning de yfinance
-    df = yf.download(ticker, start=start, end=end, interval="1d", auto_adjust=False, progress=False)
-    # Features
-    df["log_r"] = np.log(df["Close"] / df["Close"].shift(1))
-    df["rango"] = df["High"] / df["Low"] - 1
-    df = df.dropna()
-    return df
+# Obtener datos históricos
+df = yf.download("SPY", start="2019-01-01", end="2024-01-01", interval="1d")
+
+# Crear columnas para el modelo (retornos logarítmicos y rango)
+df["log_r"] = np.log(df["Close"]/df["Close"].shift(periods=1))
+df["rango"] = df["High"] / df["Low"] - 1
+df = df.dropna()
+
+# Separar datos de entrenamiento y prueba
+x_train = df[["log_r", "rango"]].loc[:"2021-12-31"] # Primeros 3 años de datos
+x_test = df[["log_r", "rango"]].loc["2022-01-01":] # Siguientes 2 años para validar el modelo
+
+print(f"Longitud de datos de entrenamiento: {x_train.shape[0]} - de {x_train.index[0]} a {x_train.index[-1]}")
+print(f"Longitud de datos de prueba: {x_test.shape[0]} - de {x_test.index[0]} a {x_test.index[-1]}")
+
+# Definir y ajustar el modelo con 2 estados (alcista y bajista)
+modelo = hmm.GaussianHMM(n_components=2, covariance_type="full", random_state=1)
+modelo.fit(x_train)
+
+# Predecir datos de entrenamiento y de prueba
+hidden_states_entrenamiento = modelo.predict(x_train)
+hidden_states_prueba = modelo.predict(x_test)
+
+# Comparar rendimientos de cada método de inversión con datos de prueba:
+#   1. Estrategia 1: Comprar y mantener
+#   2. Estrategia 2: Cruce de Promedios Móviles
+#   3. Estrategia 3: Invertir en base a la predicción del Modelo de Márkov
+
+# Datos de prueba
+df_prueba = df.loc[x_test.index]
 
 
-def split_train_test(df, fecha_corte="2021-12-31"):
-    x_train = df[["log_r", "rango"]].loc[:fecha_corte]
-    x_test  = df[["log_r", "rango"]].loc[pd.to_datetime(fecha_corte) + pd.offsets.Day(1):]
-    print(f"Longitud de datos de entrenamiento: {x_train.shape[0]} - de {x_train.index[0]} a {x_train.index[-1]}")
-    print(f"Longitud de datos de prueba: {x_test.shape[0]} - de {x_test.index[0]} a {x_test.index[-1]}")
-    return x_train, x_test
+# Estrategia 1: Comprar y Mantener
+df_prueba["rendimiento_estrategia1"] = (df_prueba["Close"].pct_change() + 1).cumprod()
+
+# Estrategia 2: Cruce de Promedios Móviles
+ma_9d = df_prueba["Close"].rolling(window=9).mean()
+ma_21d = df_prueba["Close"].rolling(window=21).mean()
+# Detectar cruces
+cruce = np.where(ma_9d > ma_21d, 1, -1)
+# Aplanar el array para que sea unidimensional
+cruce = cruce.flatten()
+# Rellenar los nans hacia adelante de los cruces
+cruce = pd.Series(cruce, index=df_prueba.index).ffill()
+# Calcular retorno
+rendimientos_diarios = df_prueba["Close"].pct_change()
+df_prueba["rendimiento_estrategia2"] = (1 + cruce.shift(periods=1) * rendimientos_diarios).cumprod()
+
+# Estrategia 3: Invertir en Base a la Predicción del Modelo de Márkov
+estado0 = df_prueba["Close"].where(hidden_states_prueba==0, np.nan)
+estado1 = df_prueba["Close"].where(hidden_states_prueba==1, np.nan)
+
+n_continuidad = 25
+estados = {"alcista": "", "bajista": ""}
+
+# Iterar sobre las filas de cualquier estado (estado0 o estado1)
+for i in range(estado0.shape[0] - n_continuidad):
+    sub_estado0 = estado0.iloc[i: i + n_continuidad].dropna()
+    # Revisar si hay 25 datos continuos
+    if sub_estado0.shape[0] == n_continuidad:
+        # Ajustar Regresión para conocer la pendiente
+        params = np.polyfit(x=sub_estado0, y=range(0, n_continuidad), deg=1)
+        pendiente = params[0]
+        if pendiente > 0:
+            estados["alcista"] = estado0
+            estados["bajista"] = estado1
+        else:
+            estados["alcista"] = estado1
+            estados["bajista"] = estado0
+        # Cesar ejecución
+        break
+    
+# Visualizar
+plt.figure(figsize=(22, 12))
+plt.plot(estados["bajista"], color="red", label="Tendencia Bajista")
+plt.plot(estados["alcista"], color="green", label="Tendencia Alcista")
+plt.title("Estados Ocultos en el ETF (SPY) - Alcista/Bajista")
+plt.xlabel("Tiempo")
+plt.ylabel("Precio")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Obtener dirección y rendimiento
+direccion = np.where(estados["alcista"].notnull(), 1, -1)
+direccion = pd.Series(direccion, index=df_prueba.index, name="Direccion")
+df_prueba["rendimiento_estrategia3"] = (1 + direccion.shift(periods=1) * rendimientos_diarios).cumprod()
 
 
-def entrenar_hmm(x_train, n_states=2, seed=1, max_iter=200):
-    modelo = hmm.GaussianHMM(n_components=n_states, covariance_type="full", random_state=seed, n_iter=max_iter)
-    modelo.fit(x_train.values)
-    return modelo
+# Graficar rendimientos para las estrategias
+df_prueba[["rendimiento_estrategia1", "rendimiento_estrategia2", "rendimiento_estrategia3"]].plot(figsize=(22, 12))
+plt.title("Comparativa de Rendimientos para Estrategias")
+plt.xlabel("Tiempo")
+plt.ylabel("Comportamiento del Capital")
+plt.legend()
+plt.show()
 
-
-def estrategia_buy_hold(df_test):
-    curva = (df_test["Close"].pct_change().fillna(0) + 1.0).cumprod()
-    curva.iloc[0] = 1.0
-    return curva.rename("rendimiento_estrategia1")
-
-
-def estrategia_ma_cross(df_test, w_fast=9, w_slow=21):
-    ma_fast = df_test["Close"].rolling(window=w_fast, min_periods=1).mean()
-    ma_slow = df_test["Close"].rolling(window=w_slow, min_periods=1).mean()
-    # Señal en {1, -1} sin crear arrays 2D
-    cruce = (ma_fast > ma_slow).astype(int).replace(0, -1)
-    cruce = cruce.ffill()
-    r = df_test["Close"].pct_change().fillna(0)
-    curva = (1 + cruce.shift(1).fillna(0) * r).cumprod()
-    curva.iloc[0] = 1.0
-    return curva.rename("rendimiento_estrategia2")
-
-
-def mapear_estados_hmm(df_test, modelo, hidden_states_test, n_cont=25):
-    """
-    Devuelve un diccionario {'alcista': Serie Close con NaN fuera del estado alcista,
-                             'bajista': Serie Close con NaN fuera del estado bajista}
-    Determina bull/bear por:
-      1) Buscar un tramo continuo de n_cont en estado 0 y mirar su pendiente.
-      2) Si no se encuentra, usa la media de log_r del modelo para decidir bull_state.
-    """
-    # Series por estado según predicción
-    close = df_test["Close"]
-    estado0 = close.where(hidden_states_test == 0, np.nan)
-    estado1 = close.where(hidden_states_test == 1, np.nan)
-
-    # Paso 1: intento por tramo continuo en estado 0
-    for i in range(0, len(estado0) - n_cont):
-        tramo = estado0.iloc[i:i + n_cont].dropna()
-        if len(tramo) == n_cont:
-            # pendiente de y(tramo) vs x=0..n-1
-            pend = np.polyfit(np.arange(n_cont), tramo.values, 1)[0]
-            if pend > 0:
-                return {"alcista": estado0, "bajista": estado1}
-            else:
-                return {"alcista": estado1, "bajista": estado0}
-
-    # Paso 2 (fallback): por medias del HMM
-    state_means = pd.DataFrame(modelo.means_, columns=["log_r", "rango"])
-    bull_state = state_means["log_r"].idxmax()
-    bear_state = 1 - bull_state
-    alcista = close.where(hidden_states_test == bull_state, np.nan)
-    bajista = close.where(hidden_states_test == bear_state, np.nan)
-    return {"alcista": alcista, "bajista": bajista}
-
-
-def estrategia_hmm(df_test, estados):
-    # Dirección: 1 si precio pertenece al estado alcista, -1 en caso contrario
-    direccion = np.where(estados["alcista"].notna(), 1, -1)
-    direccion = pd.Series(direccion, index=df_test.index, name="Direccion")
-    r = df_test["Close"].pct_change().fillna(0)
-    curva = (1 + direccion.shift(1).fillna(0) * r).cumprod()
-    curva.iloc[0] = 1.0
-    return curva.rename("rendimiento_estrategia3")
-
-
-def main():
-    # 1) Datos
-    df = descargar_datos("SPY", "2019-01-01", "2024-01-01")
-
-    # 2) Split
-    x_train, x_test = split_train_test(df, "2021-12-31")
-    df_prueba = df.loc[x_test.index].copy()
-
-    # 3) HMM
-    modelo = entrenar_hmm(x_train, n_states=2, seed=1, max_iter=200)
-    hidden_states_train = modelo.predict(x_train.values)
-    hidden_states_test = modelo.predict(x_test.values)
-
-    # 4) Estados alcista/bajista mapeados
-    estados = mapear_estados_hmm(df_prueba, modelo, hidden_states_test, n_cont=25)
-
-    # 5) Visualizar estados (opcional)
-    plt.figure(figsize=(22, 9))
-    plt.plot(estados["bajista"], color="red", label="Tendencia Bajista (HMM)", linewidth=1.3)
-    plt.plot(estados["alcista"], color="green", label="Tendencia Alcista (HMM)", linewidth=1.3)
-    plt.title("Estados Ocultos en SPY (HMM) - Alcista/Bajista")
-    plt.xlabel("Tiempo")
-    plt.ylabel("Precio")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    # 6) Estrategias
-    curva1 = estrategia_buy_hold(df_prueba)
-    curva2 = estrategia_ma_cross(df_prueba, w_fast=9, w_slow=21)
-    curva3 = estrategia_hmm(df_prueba, estados)
-
-    # 7) Comparativa de rendimientos
-    curvas = pd.concat([curva1, curva2, curva3], axis=1)
-    plt.figure(figsize=(22, 9))
-    curvas.plot(ax=plt.gca(), linewidth=1.5)
-    plt.title("Comparativa de Rendimientos (Buy&Hold vs MA Cross vs HMM)")
-    plt.xlabel("Tiempo")
-    plt.ylabel("Comportamiento del Capital (base=1)")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
+# Recordatorios:
+#   - Los estados intenrnos del modelos de Márkov nos ayudan a detectar las tendencias actuales de activos financieros.
+#   - El hecho de que el modelo se adapte bien a un instrumento financiero esto no significa que funcione para otro.
+#   - Podemos ajustar el modelo de Márkov a un índice (como lo hicimos en esta lección) para tomar decisiones más informadas,
+#     pues la mayoría de las acciones están altamente correlacionadas con los índices. Por ejemplo, si el modelo de Márkov
+#     no se ajusta con una acción que tiene mucha correlación con el S&P 500, como podría ser Microsoft (MSFT), pero a través
+#     de otro modelo (quizá indicadores técnicos) detectamos una tendencia alcista, entonces podríamos sumar ambos análisis para
+#     mejorar precisión de nuestras inversiones.
