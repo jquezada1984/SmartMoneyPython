@@ -126,3 +126,4 @@ if __name__ == "__main__":
         print("🎉 ¡Prueba exitosa! El generador de imágenes funciona correctamente.")
     else:
         print("💥 Prueba fallida. Revisar los errores arriba.")
+

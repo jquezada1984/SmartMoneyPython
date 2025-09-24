@@ -18,10 +18,6 @@ from smartmoneyconcepts.market_analysis_lib import MarketAnalysisLib
 
 
 
-
-
-
-
 def calculate_macd(df, fast=12, slow=26, signal=9):
     """Calcular MACD: MACD Line, Signal Line, Histogram"""
     exp1 = df['close'].ewm(span=fast, adjust=False).mean()
@@ -781,9 +777,101 @@ print("=" * 80)
 # Cada vela mantiene su tendencia histórica
 global_trend_history = {}
 
-# No se calculan señales de trading (librería eliminada)
-trading_signals = []
-print("ℹ️ Librería de señales de trading eliminada - continuando sin señales")
+# Importar la estrategia ICC real (misma que usa prueba_icc.py)
+try:
+    from estrategia.icc import ICCStrategy as SmartMoneyICCStrategy
+    print("✅ Estrategia ICC importada exitosamente")
+except ImportError as e:
+    print(f"❌ Error importando estrategia ICC: {e}")
+    SmartMoneyICCStrategy = None
+
+# Función para detectar señales de trading usando la misma lógica que prueba_icc.py
+def detect_trading_signals_icc(window_df, df_1h, df_4h):
+    """
+    Detectar señales de compra y venta usando la misma lógica que prueba_icc.py
+    Utiliza SmartMoney ICC Strategy
+    """
+    signals = []
+    
+    if SmartMoneyICCStrategy is None:
+        return signals
+    
+    try:
+        # Inicializar la estrategia ICC con los mismos parámetros que prueba_icc.py
+        smartmoney_icc = SmartMoneyICCStrategy(
+            risk_reward_min=1.0,  # R:R mínimo 1:1
+            ob_lookback=50,
+            fvg_lookback=30,
+            swing_length=20
+        )
+        print(f"🔍 ICC Strategy inicializada correctamente")
+        
+        # Filtrar datos de múltiples timeframes hasta el tiempo actual
+        current_time_str = window_df.index[-1]  # String format
+        current_time_dt = pd.to_datetime(current_time_str)  # Convertir a datetime para comparar
+        
+        # Asegurar que los índices de df_1h y df_4h sean Timestamp
+        df_1h_copy = df_1h.copy() if df_1h is not None else pd.DataFrame()
+        df_4h_copy = df_4h.copy() if df_4h is not None else pd.DataFrame()
+        
+        if not df_1h_copy.empty:
+            if not isinstance(df_1h_copy.index, pd.DatetimeIndex):
+                df_1h_copy.index = pd.to_datetime(df_1h_copy.index)
+        
+        if not df_4h_copy.empty:
+            if not isinstance(df_4h_copy.index, pd.DatetimeIndex):
+                df_4h_copy.index = pd.to_datetime(df_4h_copy.index)
+        
+        # Filtrar datos H1 y H4 hasta el tiempo actual
+        df_1h_filtered = df_1h_copy[df_1h_copy.index <= current_time_dt] if not df_1h_copy.empty else pd.DataFrame()
+        df_4h_filtered = df_4h_copy[df_4h_copy.index <= current_time_dt] if not df_4h_copy.empty else pd.DataFrame()
+        
+        # Convertir los índices filtrados a string para la estrategia ICC
+        if not df_1h_filtered.empty:
+            df_1h_filtered = df_1h_filtered.copy()
+            df_1h_filtered.index = df_1h_filtered.index.strftime("%Y-%m-%d %H:%M:%S")
+        if not df_4h_filtered.empty:
+            df_4h_filtered = df_4h_filtered.copy()
+            df_4h_filtered.index = df_4h_filtered.index.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Usar la misma función que prueba_icc.py
+        print(f"🔍 Analizando señales ICC - Window: {len(window_df)}, H1: {len(df_1h_filtered)}, H4: {len(df_4h_filtered)}")
+        icc_signals = smartmoney_icc.scan_for_icc_signals(window_df, df_1h_filtered, df_4h_filtered)
+        
+        if icc_signals:
+            print(f"🎯 Señales ICC encontradas: {len(icc_signals)}")
+            for signal in icc_signals:
+                direction = signal['direction']
+                entry_price = signal['entry_price']
+                
+                # Convertir a formato compatible con smart01.py
+                if direction == 'LONG':
+                    signals.append({
+                        'type': 'COMPRA',
+                        'price': entry_price,
+                        'reason': f'ICC SmartMoney LONG @ {entry_price:.5f}',
+                        'direction': direction,
+                        'entry_price': entry_price,
+                        'risk_management': signal.get('risk_management', {})
+                    })
+                elif direction == 'SHORT':
+                    signals.append({
+                        'type': 'VENTA',
+                        'price': entry_price,
+                        'reason': f'ICC SmartMoney SHORT @ {entry_price:.5f}',
+                        'direction': direction,
+                        'entry_price': entry_price,
+                        'risk_management': signal.get('risk_management', {})
+                    })
+    
+    except Exception as e:
+        print(f"⚠️ Error en detección ICC: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return signals
+
+print("✅ Sistema de detección de señales ICC implementado (misma lógica que prueba_icc.py)")
 
 frames_dir = "frames_png"
 if os.path.exists(frames_dir):
@@ -1413,8 +1501,11 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
     )
     fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
     
-    # MEJORA: Renombrar archivo según confirmación múltiple de tendencias
+    # MEJORA: Renombrar archivo según confirmación múltiple de tendencias Y señales de trading
     base_filename = f"frame_{pos:04d}"
+    
+    # Detectar señales de trading usando la misma lógica que prueba_icc.py
+    trading_signals = detect_trading_signals_icc(window_df, df_1h, df_4h)
     
     # Verificar si hay confirmación múltiple para renombrar el archivo
     file_suffix = ""
@@ -1428,8 +1519,20 @@ for pos in tqdm(range(start_pos, len(df_5m)), desc="Generando últimos frames"):
         if 'trend_type_4h' in locals() and not trend_type_4h.endswith(('NA', 'ERROR')):
             valid_trends.append(('4H', trend_type_4h, current_trend_4h))
         
-        # Verificar si hay al menos 2 tendencias válidas para comparar
-        if len(valid_trends) >= 2:
+        # PRIORIDAD 1: Señales de trading
+        if trading_signals:
+            for signal in trading_signals:
+                if signal['type'] == 'COMPRA':
+                    file_suffix = "_COMPRA"
+                    print(f"   🎯 SEÑAL DE COMPRA DETECTADA: {signal['reason']} → Archivo: {base_filename}{file_suffix}.png")
+                    break
+                elif signal['type'] == 'VENTA':
+                    file_suffix = "_VENTA"
+                    print(f"   🎯 SEÑAL DE VENTA DETECTADA: {signal['reason']} → Archivo: {base_filename}{file_suffix}.png")
+                    break
+        
+        # PRIORIDAD 2: Confirmación múltiple de tendencias (solo si no hay señales de trading)
+        elif len(valid_trends) >= 2:
             # Extraer solo los valores de tendencia (-1, 0, 1)
             trend_values = [trend[2] for trend in valid_trends]
             
